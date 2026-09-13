@@ -37,7 +37,6 @@ dirsift = "dirsift.cli:app"
 
 [dependency-groups]
 dev = [
-    "playwright>=1.62.0",
     "pytest>=8.3,<9",
     "pytest-asyncio>=0.25,<0.26",
     "ruff>=0.9,<0.10",
