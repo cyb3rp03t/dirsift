@@ -1,0 +1,48 @@
+# --- samples and loot: never committed -------------------------------------
+# DirSift is pointed at hostile infrastructure. Nothing that comes back from a
+# scan target belongs in git. Hashes and YARA rules only.
+*.exe
+*.dll
+*.bin
+*.sample
+*.scr
+*.msi
+*.jar
+*.vbs
+*.ps1.download
+samples/
+loot/
+runs/
+captures/
+*.pcap
+
+# --- secrets ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# --- python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- data ------------------------------------------------------------------
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# --- editors / os ----------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
