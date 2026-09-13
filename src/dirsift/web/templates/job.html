@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}scanning {{ job.url | defang }}{% endblock %}
+{% block body %}
+
+<h2>Scanning</h2>
+<div class="panel">
+  <p class="lead">{{ job.url | defang }}</p>
+  <div hx-get="/jobs/{{ job.id }}/status" hx-trigger="load" hx-swap="outerHTML"
+       aria-live="polite">
+    <p class="dim flush">starting...</p>
+  </div>
+</div>
+
+<p class="dim">
+  This page polls; it does not hold the connection open. Closing it does not stop
+  the scan, and the run is written to disk when the walk finishes.
+</p>
+
+{% endblock %}

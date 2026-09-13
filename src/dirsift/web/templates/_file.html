@@ -1,0 +1,32 @@
+<div>
+  <p class="subhead">{{ entry.name }}</p>
+  <p class="stack-2">
+    <span class="pill">{{ entry.kind }}</span>
+    {% if entry.magic %}<span class="pill">{{ entry.magic }}</span>{% endif %}
+    {% if entry.cluster %}<span class="pill">{{ entry.cluster }}</span>{% endif %}
+  </p>
+  <p class="dim stack-2 fs-sm">
+    {{ entry.fetched_bytes | human_size }} read
+    {% if entry.sha256 %}&middot; sha256 {{ entry.sha256 }}{% endif %}
+    {% if entry.content_type %}&middot; {{ entry.content_type }}{% endif %}
+  </p>
+  {% if entry.references %}
+  <p class="dim stack-2 fs-sm">
+    references:
+    {% for ref in entry.references %}<code>{{ ref }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+  {% if entry.text_preview %}
+  <p class="warn stack-2 fs-sm">
+    Raw contents, exactly as served. Not defanged: do not paste this into a chat
+    window without looking at it first.
+  </p>
+  <pre class="scroll" tabindex="0" role="region"
+       aria-label="Contents of {{ entry.name }}">{{ entry.text_preview }}</pre>
+  {% else %}
+  <p class="dim flush">
+    Binary, or not read. DirSift keeps text only; pulling the sample is a decision
+    for an isolated VM, not for this page.
+  </p>
+  {% endif %}
+</div>

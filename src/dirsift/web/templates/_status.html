@@ -1,0 +1,22 @@
+{% if job.state in ("queued", "running") %}
+<div hx-get="/jobs/{{ job.id }}/status" hx-trigger="load delay:900ms" hx-target="this"
+     hx-swap="outerHTML" aria-busy="true">
+  <p class="stack-1">
+    <span class="warn">{{ job.state }}</span>
+    <span class="pill">{{ job.listings }} listings</span>
+    <span class="pill">{{ job.peeks }} files read</span>
+  </p>
+  <p class="dim flush">{{ job.stage }} {{ job.detail }}</p>
+</div>
+{% elif job.state == "done" %}
+<div>
+  <p class="good stack-1">done</p>
+  <p class="flush"><a href="/runs/{{ job.run_name }}">open the triage page</a></p>
+  <script>window.location = "/runs/{{ job.run_name }}";</script>
+</div>
+{% else %}
+<div>
+  <p class="bad stack-2">failed</p>
+  <pre>{{ job.error }}</pre>
+</div>
+{% endif %}

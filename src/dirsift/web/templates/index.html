@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block body %}
+
+<h2>New scan</h2>
+<div class="panel">
+  <form method="post" action="/scan">
+    <div class="row">
+      <label class="grow" for="url">
+        <span class="nowrap">target</span>
+        <input class="grow" id="url" type="text" name="url"
+               placeholder="http://203.0.113.10:8080/files/" required autofocus>
+      </label>
+      <label for="depth">depth
+        <input class="w-xs" id="depth" type="number" name="depth" value="2" min="0" max="6">
+      </label>
+      <label for="delay">delay
+        <input class="w-sm" id="delay" type="number" name="delay" value="1.0"
+               min="0.2" max="30" step="0.1">s
+      </label>
+      <label><input type="checkbox" name="peek" value="true" checked> read file heads</label>
+      <label><input type="checkbox" name="allow_private" value="true"> allow private</label>
+      <button type="submit">scan</button>
+    </div>
+  </form>
+  <p class="dim gap-top">
+    One request per second by default. The walk follows only links the listing
+    actually contains.
+  </p>
+</div>
+
+{% if jobs %}
+<h2>Recent jobs</h2>
+<div class="panel">
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Recent scan jobs">
+    <table>
+      <thead>
+        <tr><th>started</th><th>target</th><th>state</th><th><span class="dim">open</span></th></tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td class="dim nowrap">{{ job.started_at.strftime("%H:%M:%S") }}</td>
+          <td>{{ job.url | defang }}</td>
+          <td class="{{ 'good' if job.state == 'done' else 'bad' if job.state == 'failed' else 'warn' }}">
+            {{ job.state }}
+          </td>
+          <td><a href="/jobs/{{ job.id }}">open</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<h2>Saved runs</h2>
+<div class="panel">
+  {% if runs %}
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Saved runs">
+    <table>
+      <thead>
+        <tr><th>run</th><th>target</th><th class="num">files</th><th>open</th></tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+        <tr>
+          <td class="dim nowrap">{{ run.name[:15] }}</td>
+          <td>{{ run.url | defang }}</td>
+          <td class="num">{{ run.files }}</td>
+          <td class="nowrap">
+            <a href="/runs/{{ run.name }}">triage</a>
+            &middot; <a href="/runs/{{ run.name }}/report.md">md</a>
+            &middot; <a href="/runs/{{ run.name }}/iocs.txt">iocs</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="dim flush">Nothing here yet. Scans land in the runs directory as JSON and
+  can be re-analysed later without touching the target again.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

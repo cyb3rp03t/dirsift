@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}{{ result.root_url | defang }}{% endblock %}
+{% block body %}
+
+<h2>Target</h2>
+<div class="panel">
+  <p class="lead">{{ result.root_url | defang }}</p>
+  <p class="dim flush">
+    <span class="pill">{{ result.listing_flavor or "unknown index" }}</span>
+    <span class="pill">{{ result.server or "no server header" }}</span>
+    <span class="pill">{{ result.files | length }} files</span>
+    <span class="pill">{{ result.dirs | length }} dirs</span>
+    <span class="pill">{{ result.requests_made }} requests</span>
+    <span class="pill">{{ result.bytes_fetched | human_size }} read</span>
+  </p>
+  <p class="gap-top">
+    <a href="/runs/{{ name }}/report.md">markdown report</a> &middot;
+    <a href="/runs/{{ name }}/iocs.txt">indicators</a>
+  </p>
+</div>
+
+<div class="split">
+  <div>
+    <h2>Inventory</h2>
+    <div class="panel">
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Inventory by type">
+        <table>
+          <thead>
+            <tr><th>type</th><th class="num">files</th><th>examples</th></tr>
+          </thead>
+          <tbody>
+            {% for kind, items in by_kind %}
+            <tr>
+              <td>{{ kind }}</td>
+              <td class="num">{{ items | length }}</td>
+              <td class="dim">{{ items[:3] | map(attribute="name") | join(", ") }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if result.clusters %}
+    <h2>Version families</h2>
+    <div class="panel">
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Version families">
+        <table>
+          <thead>
+            <tr><th>family</th><th>variants</th><th class="num">n</th></tr>
+          </thead>
+          <tbody>
+            {% for cluster in result.clusters %}
+            <tr>
+              <td>{{ cluster.label }}</td>
+              <td class="dim">{{ cluster.variants | join(", ") }}</td>
+              <td class="num">{{ cluster.members | length }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <h2>Entry point candidates</h2>
+    <div class="panel">
+      {% if candidates %}
+        {% for candidate in candidates %}
+        <p class="stack-1">
+          <span class="score">{{ candidate.score }}</span>
+          <button type="button" class="linkish"
+                  hx-get="/runs/{{ name }}/file?url={{ candidate.entry.url | urlencode }}"
+                  hx-target="#preview" hx-swap="innerHTML">{{ candidate.entry.name }}</button>
+        </p>
+        <p class="dim stack-3">{{ candidate.reasons | join("; ") }}</p>
+        {% endfor %}
+      {% else %}
+        <p class="dim flush">Nothing here reads like a driver for the rest.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div>
+    <h2>Indicators <span class="dim">({{ result.iocs | length }})</span></h2>
+    <div class="panel">
+      {% if result.iocs %}
+      <div class="scroll table-wrap" tabindex="0" role="region" aria-label="Extracted indicators">
+        <table>
+          <tbody>
+            {% for ioc in result.iocs %}
+            <tr>
+              <td class="dim nowrap">{{ ioc.ioc_type }}</td>
+              <td>
+                {{ ioc.defanged }}{% if ioc.label %} <span class="pill">{{ ioc.label }}</span>{% endif %}
+                <div class="dim fs-xs">{{ ioc.context }}</div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="dim flush">Nothing extracted.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<h2>Listing</h2>
+<div class="panel">
+  <div class="scroll table-wrap" tabindex="0" role="region" aria-label="Full directory listing">
+    <table>
+      <thead>
+        <tr>
+          <th>path</th><th>type</th><th class="num">size</th>
+          <th>modified</th><th>family</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in entries %}
+        <tr>
+          <td>
+            {% if entry.is_dir %}
+              <span class="dim">{{ entry.name }}/</span>
+            {% else %}
+              <button type="button" class="linkish"
+                      hx-get="/runs/{{ name }}/file?url={{ entry.url | urlencode }}"
+                      hx-target="#preview" hx-swap="innerHTML">{{ entry.name }}</button>
+            {% endif %}
+          </td>
+          <td class="dim">{{ "dir" if entry.is_dir else entry.kind }}</td>
+          <td class="num dim">{{ (entry.size or entry.fetched_bytes) | human_size }}</td>
+          <td class="dim nowrap">{{ entry.modified or "-" }}</td>
+          <td class="dim">{{ entry.cluster or "" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h2>Preview</h2>
+<div class="panel" id="preview" aria-live="polite">
+  <p class="dim flush">Pick a file above. Contents come from the saved run;
+  opening one here sends nothing to the target.</p>
+</div>
+
+{% if result.errors %}
+<h2>Notes and errors</h2>
+<div class="panel">
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Scan notes and errors">
+    <table>
+      <thead><tr><th>stage</th><th>url</th><th>detail</th></tr></thead>
+      <tbody>
+        {% for error in result.errors %}
+        <tr>
+          <td class="dim">{{ error.stage }}</td>
+          <td>{{ error.url | defang }}</td>
+          <td>{{ error.detail }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
