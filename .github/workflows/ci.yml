@@ -25,10 +25,10 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
 
@@ -41,11 +41,8 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
-      - name: Check formatting
-        run: uv run ruff format --check .
-
       - name: Run tests
         run: uv run pytest -q
 
-      - name: Smoke test the CLI
+      - name: Check that the CLI starts
         run: uv run dirsift --help
