@@ -27,7 +27,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..analyze import analyze
 from ..extract import defang
-from ..fetcher import ScopeError
+from ..fetcher import PrivateTargetError, ScopeError
 from ..models import ScanResult
 from ..report import human_size, render_markdown
 from ..walker import ScanOptions, scan
@@ -71,6 +71,16 @@ def _slug(url: str) -> str:
     safe = "".join(c if c.isalnum() else "-" for c in url).strip("-")
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     return f"{stamp}-{safe[:60]}"
+
+
+def _failure_message(exc: Exception) -> str:
+    """What a failed job says. The form has a checkbox where the CLI has a flag."""
+    if isinstance(exc, PrivateTargetError):
+        return (
+            f"{defang(exc.host)} is a private or loopback address. "
+            'Tick "allow private" and scan again if that is deliberate.'
+        )
+    return f"{type(exc).__name__}: {exc}"
 
 
 def create_app(runs_dir: Path = Path("runs")) -> FastAPI:
@@ -129,7 +139,7 @@ def create_app(runs_dir: Path = Path("runs")) -> FastAPI:
             job.state = "done"
         except Exception as exc:  # noqa: BLE001 - surfaced in the UI
             job.state = "failed"
-            job.error = f"{type(exc).__name__}: {exc}"
+            job.error = _failure_message(exc)
 
     # -- routes ------------------------------------------------------------
 

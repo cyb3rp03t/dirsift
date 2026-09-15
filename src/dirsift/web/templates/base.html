@@ -219,12 +219,15 @@
 </head>
 <body>
 <header>
-  <span class="brand">DIRSIFT</span>
+  <a class="brand" href="/">DIRSIFT</a>
   <span class="tag">someone left the lights on</span>
   <span class="grow"></span>
-  <a href="/">runs</a>
+  <a href="/">dashboard</a>
 </header>
 <main>
+{% block backlink %}
+<p class="flush"><a href="/"><span aria-hidden="true">&larr;</span> Back to Dashboard</a></p>
+{% endblock %}
 {% block body %}{% endblock %}
 </main>
 <footer>

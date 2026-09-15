@@ -47,6 +47,17 @@ class ScopeError(Exception):
     """Raised when a URL falls outside the agreed scope."""
 
 
+class PrivateTargetError(ScopeError):
+    """The root resolves to a private or loopback address and that was not allowed."""
+
+    def __init__(self, host: str) -> None:
+        self.host = host
+        super().__init__(
+            f"{host} resolves to a private or loopback address. "
+            "Pass allow_private=True (CLI: --allow-private) if that is deliberate."
+        )
+
+
 class AuthWall(Exception):
     """The server asked for credentials. DirSift does not have any and stops."""
 
@@ -99,10 +110,7 @@ class Scope:
             path = path.rsplit("/", 1)[0] + "/"
         self._root_parts = (parsed.scheme, parsed.netloc.lower(), path)
         if not self.allow_private and is_private_host(parsed.hostname or ""):
-            raise ScopeError(
-                f"{parsed.hostname} resolves to a private or loopback address. "
-                "Pass allow_private=True (CLI: --allow-private) if that is deliberate."
-            )
+            raise PrivateTargetError(parsed.hostname or "")
 
     def contains(self, url: str) -> bool:
         scheme, netloc, path = self._root_parts

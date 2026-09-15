@@ -13,6 +13,20 @@
     <span class="pill">{{ result.requests_made }} requests</span>
     <span class="pill">{{ result.bytes_fetched | human_size }} read</span>
   </p>
+  {% if not result.entries %}
+  {% if result.listing_flavor and result.listing_flavor != "generic" %}
+  <p class="gap-top">
+    The server answered with a directory index, but the index lists nothing. The scan
+    worked; there is nothing here to triage.
+  </p>
+  {% elif result.errors %}
+  <p class="warn gap-top">
+    Nothing was listed. The notes and errors at the bottom of this page say why.
+  </p>
+  {% else %}
+  <p class="warn gap-top">Nothing was listed.</p>
+  {% endif %}
+  {% endif %}
   <p class="gap-top">
     <a href="/runs/{{ name }}/report.md">markdown report</a> &middot;
     <a href="/runs/{{ name }}/iocs.txt">indicators</a>
