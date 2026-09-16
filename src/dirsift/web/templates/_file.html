@@ -8,6 +8,13 @@
       {% if entry.magic %}<li class="chip">{{ entry.magic }}</li>{% endif %}
       {% if entry.cluster %}<li class="chip is-signal">{{ entry.cluster }}</li>{% endif %}
       {% if entry.truncated %}<li class="chip is-warn">partial read</li>{% endif %}
+      {%- if entry.verdict and entry.verdict.found %}
+      <li class="chip {% if entry.verdict.malicious %}is-alert{% else %}is-good{% endif %}">
+        {{ entry.verdict.malicious }}/{{ entry.verdict.total }} engines
+      </li>
+      {%- elif entry.verdict %}
+      <li class="chip is-warn">not seen by the scanner</li>
+      {%- endif %}
     </ul>
   </div>
 
