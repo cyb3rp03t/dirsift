@@ -549,3 +549,67 @@ def test_a_pasted_hash_without_a_key_says_how_to_set_one(tmp_path: Path):
     client = TestClient(create_app(tmp_path, lookup=stub_lookup(None)))
     panel = client.post("/verdict", data={"digest": "2" * 64})
     assert "DIRSIFT_VT_API_KEY" in panel.text
+
+
+# -- which network an address belongs to -----------------------------------
+
+
+def run_with_networks(runs_dir: Path) -> str:
+    return save_run(
+        runs_dir,
+        ScanResult(
+            root_url="http://203.0.113.24/files/",
+            listing_flavor="apache",
+            target_ip="203.0.113.24",
+            target_asn=64496,
+            target_as_name="EXAMPLE-HOSTING",
+            target_country="NL",
+            asn_source="ip2asn-combined.tsv",
+            asn_stamp="2026-09-16",
+            entries=[
+                Entry(
+                    url="http://203.0.113.24/files/config.json",
+                    name="config.json",
+                    depth=1,
+                    fetched_bytes=80,
+                    sha256="e" * 64,
+                    text_preview='{"gate": "198.51.100.77"}',
+                )
+            ],
+            iocs=[
+                Ioc(
+                    ioc_type="ipv4",
+                    value="198.51.100.77",
+                    defanged="198[.]51[.]100[.]77",
+                    source_url="http://203.0.113.24/files/config.json",
+                    asn=64497,
+                    as_name="TEST-NET-HOSTING",
+                    country="DE",
+                )
+            ],
+        ),
+    )
+
+
+def test_the_target_card_says_which_network_it_sits_in(tmp_path: Path):
+    name = run_with_networks(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    assert "AS64496" in page
+    assert "EXAMPLE-HOSTING" in page
+    assert "NL" in page
+    assert "203[.]0[.]113[.]24" in page  # the address, defanged like every target
+
+
+def test_an_indicator_carries_its_network(tmp_path: Path):
+    name = run_with_networks(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    assert "AS64497" in page
+    assert "TEST-NET-HOSTING" in page
+
+
+def test_the_page_says_which_table_answered(tmp_path: Path):
+    """An ASN without a date is a guess, so the page names the dataset."""
+    name = run_with_networks(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    assert "ip2asn-combined.tsv" in page
+    assert "2026-09-16" in page

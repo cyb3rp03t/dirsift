@@ -163,6 +163,9 @@
       <li class="chip">
         <span class="quiet">{{ ioc.ioc_type }}</span>
         <span class="data">{{ ioc.defanged }}</span>
+        {% if ioc.asn %}
+        <span class="quiet">AS{{ ioc.asn }}{% if ioc.as_name %} {{ ioc.as_name }}{% endif %}{% if ioc.country %} {{ ioc.country }}{% endif %}</span>
+        {% endif %}
         <button type="button" class="copy" data-copy="{{ ioc.defanged }}">copy</button>
       </li>
       {% endfor %}

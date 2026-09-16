@@ -125,3 +125,33 @@ def test_a_saved_run_is_all_these_commands_touch(tmp_path: Path):
     runner.invoke(cli.app, ["hashes", str(run)])
     runner.invoke(cli.app, ["rules", str(run)])
     assert json.loads(run.read_text(encoding="utf-8")) == before
+
+
+# -- placing an address, from a table already on the machine ---------------
+
+ASN_ROWS = "203.0.113.0\t203.0.113.255\t64496\tNL\tEXAMPLE-HOSTING\n"
+
+
+def test_net_says_which_network_an_address_is_in(tmp_path: Path):
+    table = tmp_path / "ip2asn.tsv"
+    table.write_text(ASN_ROWS, encoding="utf-8")
+    reply = runner.invoke(cli.app, ["net", "203.0.113.24", "--db", str(table)])
+    assert reply.exit_code == 0
+    assert "AS64496" in reply.stdout
+    assert "EXAMPLE-HOSTING" in reply.stdout
+    assert "NL" in reply.stdout
+
+
+def test_net_without_a_table_says_where_to_get_one(tmp_path: Path):
+    reply = runner.invoke(cli.app, ["net", "203.0.113.24", "--db", str(tmp_path / "absent.tsv")])
+    assert reply.exit_code != 0
+    assert "iptoasn" in reply.stdout
+    assert "DIRSIFT_ASN_DB" in reply.stdout
+
+
+def test_net_is_honest_when_the_table_has_no_answer(tmp_path: Path):
+    table = tmp_path / "ip2asn.tsv"
+    table.write_text(ASN_ROWS, encoding="utf-8")
+    reply = runner.invoke(cli.app, ["net", "10.0.0.1", "--db", str(table)])
+    assert reply.exit_code != 0
+    assert "ip2asn.tsv" in reply.stdout  # which table was asked, not just "no"

@@ -101,6 +101,11 @@ class Ioc(BaseModel):
     context: str | None = None
     label: str | None = None  # e.g. "aws_access_key", "telegram_bot_token"
 
+    # Filled in from a local table, when the machine has one. No lookup is made.
+    asn: int | None = None
+    as_name: str | None = None
+    country: str | None = None
+
     def key(self) -> tuple[str, str]:
         return (self.ioc_type, self.value.lower())
 
@@ -146,6 +151,18 @@ class ScanResult(BaseModel):
     server: str | None = None
     listing_flavor: str | None = None  # apache, nginx, iis, python, caddy, h5ai, json
     title: str | None = None
+
+    # The address the host resolved to when the walk ran, and the network it
+    # belongs to. The connection went there anyway; recording it costs nothing.
+    target_ip: str | None = None
+    target_asn: int | None = None
+    target_as_name: str | None = None
+    target_country: str | None = None
+
+    # Which table answered, and when it was published. ASN ownership moves, so
+    # an answer without a date is a guess dressed as a fact.
+    asn_source: str | None = None
+    asn_stamp: str | None = None
 
     entries: list[Entry] = Field(default_factory=list)
     clusters: list[Cluster] = Field(default_factory=list)

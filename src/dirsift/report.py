@@ -53,6 +53,21 @@ def human_size(size: int | None) -> str:
     return f"{value:.1f}T"
 
 
+def network_note(asn: int | None, as_name: str = "", country: str = "") -> str:
+    """How an address is described once its network is known.
+
+    Written as one string because that is how it is read: the number, who
+    announces it, and where they said it was. Missing parts are simply absent.
+    """
+    if not asn:
+        return ""
+    parts = [f"AS{asn}"]
+    if as_name:
+        parts.append(as_name)
+    tail = " ".join(parts)
+    return f"{tail}, {country}" if country else tail
+
+
 def _rel(entry: Entry, root: str) -> str:
     return entry.url[len(root) :] if entry.url.startswith(root) else entry.url
 
@@ -95,6 +110,10 @@ def render_markdown(
     add(f"- **Scanned**: {_fmt_time(result.started_at)} to {_fmt_time(result.finished_at)}")
     add(f"- **Server**: `{result.server or 'not advertised'}`")
     add(f"- **Index flavour**: `{result.listing_flavor or 'unknown'}`")
+    if result.target_ip:
+        network = network_note(result.target_asn, result.target_as_name, result.target_country)
+        suffix = f" ({network})" if network else ""
+        add(f"- **Address**: `{defang(result.target_ip)}`{suffix}")
     if result.title:
         add(f"- **Page title**: {result.title}")
     families = len(result.clusters)
@@ -199,9 +218,15 @@ def render_markdown(
             "is binary._")
         add("")
     else:
-        add("Defanged. Pulled from file contents only: nothing was resolved, queried or "
-            "submitted anywhere.")
+        add("Defanged. Pulled from file contents only: none of these was resolved, "
+            "queried or submitted anywhere. The address in the header is the one the "
+            "scan connected to, which the connection had to know regardless.")
         add("")
+        if result.asn_source:
+            stamp = f", dated {result.asn_stamp}" if result.asn_stamp else ""
+            add(f"Networks read from `{result.asn_source}`{stamp}, on this machine. "
+                "ASN ownership changes, so an answer older than the address is a guess.")
+            add("")
         grouped: dict[str, list] = {}
         for ioc in result.iocs:
             grouped.setdefault(ioc.ioc_type, []).append(ioc)
@@ -211,7 +236,8 @@ def render_markdown(
             add("```")
             for ioc in items[:80]:
                 label = f"  [{ioc.label}]" if ioc.label else ""
-                add(f"{ioc.defanged}{label}")
+                network = network_note(ioc.asn, ioc.as_name, ioc.country)
+                add(f"{ioc.defanged}{label}{f'  {network}' if network else ''}")
             if len(items) > 80:
                 add(f"... +{len(items) - 80} more")
             add("```")

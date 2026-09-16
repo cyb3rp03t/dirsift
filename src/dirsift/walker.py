@@ -12,10 +12,12 @@ the batch file, the panel. Depth-first would spend the budget in
 
 from __future__ import annotations
 
+import socket
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 import httpx
 
@@ -51,6 +53,20 @@ class ScanOptions:
         }
 
 
+def _resolve(host: str | None) -> str | None:
+    """The address the walk is about to talk to.
+
+    The connection resolves this anyway; writing it into the run costs nothing
+    and is what lets a saved scan be placed in a network later, offline.
+    """
+    if not host:
+        return None
+    try:
+        return socket.getaddrinfo(host, None)[0][4][0]
+    except (socket.gaierror, OSError, IndexError):
+        return None
+
+
 def _say(options: ScanOptions, event: str, detail: str) -> None:
     if options.progress is not None:
         options.progress(event, detail)
@@ -65,6 +81,7 @@ def scan(root_url: str, options: ScanOptions | None = None) -> ScanResult:
 
     scope = Scope(root=root, allow_private=options.allow_private)
     result = ScanResult(root_url=root, options=options.as_dict())
+    result.target_ip = _resolve(urlparse(root).hostname)
 
     with PoliteFetcher(
         scope,

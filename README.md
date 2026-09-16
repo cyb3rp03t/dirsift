@@ -53,6 +53,11 @@ It does not decide anything for you. It collects.
   keyed to the indicators that file carried rather than to its digest. The hash
   stays in meta as identity: a hash matches one build, the address inside it
   usually survives the next one.
+- **Places the addresses, offline.** Every IP it found, and the address the
+  target itself resolved to, gets an AS number, the network's name and a
+  country, read from a table on your disk. No lookup service is asked, because
+  asking one tells a stranger what you are looking at. Optional: without the
+  table the scan is unchanged.
 - **Writes the page.** A markdown triage report, plus a scaffold for the writeup
   that is left empty on purpose.
 
@@ -132,6 +137,9 @@ dirsift rules run.json --name install.bat
 # ask a public scanner about one digest, which is the only call that leaves
 dirsift check 13565af72d91125920826dd15db83bd6e48aecc1a466b9a639a6780eaf037342
 
+# which network an address belongs to, answered from disk
+dirsift net 203.0.113.24
+
 # the local triage UI
 dirsift web
 ```
@@ -168,6 +176,35 @@ air-gapped analysis box. It never reaches out on its own: a scan starts when you
 press the button, every view after that is served from the saved run, and the
 hash check is the one thing that leaves, only when pressed.
 
+## Addresses and their networks
+
+The hosting provider behind an address is the part that repeats between
+campaigns. The address itself changes; AS14061 does not. DirSift will tell you
+which network every address belongs to, but only from a table you already have,
+never from a lookup service: a query is a disclosure, one address at a time, and
+this tool does not make them.
+
+Get the table once, from [iptoasn.com](https://iptoasn.com/), and put it where
+DirSift looks:
+
+```bash
+mkdir -p ~/.dirsift
+curl -L -o ~/.dirsift/ip2asn-combined.tsv.gz https://iptoasn.com/data/ip2asn-combined.tsv.gz
+```
+
+Or keep it anywhere and say so:
+
+```bash
+export DIRSIFT_ASN_DB=/srv/data/ip2asn-combined.tsv.gz
+```
+
+The gzip is read in place, so there is nothing to unpack. From then on the run
+page, the report and the terminal show `AS13335 CLOUDFLARENET US` beside each
+address, and the report names the file and its date: an announcement that
+changed hands last month makes a stale table lie with confidence.
+
+Without the table, nothing breaks. The addresses are simply not placed.
+
 ## Options that matter
 
 | Option | Default | Why you would change it |
@@ -179,6 +216,10 @@ hash check is the one thing that leaves, only when pressed.
 | `--max-requests` | 600 | The hard stop. |
 | `--proxy` | none | Route through Tor or a VPS. |
 | `--allow-private` | off | Needed for loopback and RFC1918 targets. |
+
+`DIRSIFT_ASN_DB` points at the address table, and `DIRSIFT_VT_API_KEY` holds the
+VirusTotal key. Both are environment variables rather than flags, so neither
+ends up in a command line that every process on the box can read.
 
 ## What it is not
 

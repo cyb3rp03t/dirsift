@@ -9,7 +9,16 @@
 <div class="grid grid-hero">
   <section class="card card-hero" aria-labelledby="target-title">
     <p class="quiet" id="target-title" style="margin: 0 0 var(--space-2)">Target</p>
-    <p class="display data" style="margin: 0">{{ result.root_url | defang }}</p>
+    <h1 class="display data" style="margin: 0">{{ result.root_url | defang }}</h1>
+    {% if result.target_ip %}
+    <p class="quiet data" style="margin: var(--space-2) 0 0">
+      resolved to {{ result.target_ip | defang }}
+      {% if result.target_asn %}
+      <span class="chip">AS{{ result.target_asn }}{% if result.target_as_name %} {{ result.target_as_name }}{% endif %}</span>
+      {% if result.target_country %}<span class="chip">{{ result.target_country }}</span>{% endif %}
+      {% endif %}
+    </p>
+    {% endif %}
 
     <ul class="chips" style="margin-block-start: var(--space-4)">
       <li class="chip is-signal">{{ result.listing_flavor or "unknown index" }}</li>
@@ -144,6 +153,7 @@
             <td class="data">
               {{ ioc.defanged }}
               {% if ioc.label %}<span class="chip is-warn">{{ ioc.label }}</span>{% endif %}
+              {% if ioc.asn %}<span class="chip">AS{{ ioc.asn }}{% if ioc.as_name %} {{ ioc.as_name }}{% endif %}{% if ioc.country %} {{ ioc.country }}{% endif %}</span>{% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -153,6 +163,13 @@
     <p class="scroll-hint">Scrolls inside its own box. Full list in indicators.txt.</p>
     {% else %}
     <p class="empty">Nothing extracted. Either the readable files were empty or everything here is binary.</p>
+    {% endif %}
+    {% if result.asn_source %}
+    <p class="scroll-hint">
+      Networks read from {{ result.asn_source }}, dated {{ result.asn_stamp }}, on this
+      machine. Nobody was asked. Announcements change hands, so a table older than the
+      address is a guess.
+    </p>
     {% endif %}
   </section>
 </div>

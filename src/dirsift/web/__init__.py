@@ -30,6 +30,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
 from ..analyze import analyze
+from ..asn import default_table
 from ..classify import mismatch
 from ..enrich import MissingKey, api_key_from_env, lookup_hash
 from ..extract import defang
@@ -209,6 +210,12 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     templates.env.filters["human_size"] = human_size
     templates.env.filters["defang"] = defang
     jobs = JobStore()
+
+    # The address table is half a million ranges and takes a few seconds to
+    # read. Every run page places its addresses against it, so it is warmed
+    # here instead of making the first page of the session wait for it. A
+    # machine without the table gets an empty one back immediately.
+    threading.Thread(target=default_table, daemon=True, name="asn-warm").start()
 
     # -- helpers -----------------------------------------------------------
 

@@ -12,12 +12,13 @@ from rich.console import Console
 from rich.table import Table
 
 from .analyze import analyze
+from .asn import ENV_PATH, AsnTable, default_table
 from .banner import banner
 from .enrich import MissingKey, api_key_from_env, lookup_hash
 from .extract import defang
 from .fetcher import ScopeError
 from .models import ScanResult
-from .report import human_size, render_markdown
+from .report import human_size, network_note, render_markdown
 from .rules import build_rules
 from .walker import ScanOptions, scan
 
@@ -64,6 +65,14 @@ def _summary(result: ScanResult, candidates) -> None:
     console.print(table)
     console.print()
 
+    if result.target_ip:
+        network = network_note(result.target_asn, result.target_as_name, result.target_country)
+        console.print(
+            f"[dim]served from {defang(result.target_ip)}"
+            f"{f'  {network}' if network else ''}[/dim]"
+        )
+        console.print()
+
     if result.clusters:
         console.print("[bold]version families[/]")
         for cluster in result.clusters[:8]:
@@ -87,7 +96,9 @@ def _summary(result: ScanResult, candidates) -> None:
         for ioc in result.iocs[:12]:
             # Square brackets would be eaten as rich markup here.
             label = f" [dim]({ioc.label})[/]" if ioc.label else ""
-            console.print(f"  [magenta]{ioc.ioc_type:<9}[/] {ioc.defanged}{label}")
+            network = network_note(ioc.asn, ioc.as_name, ioc.country)
+            where = f" [dim]{network}[/]" if network else ""
+            console.print(f"  [magenta]{ioc.ioc_type:<9}[/] {ioc.defanged}{label}{where}")
         if len(result.iocs) > 12:
             console.print(f"  [dim]+{len(result.iocs) - 12} more, see the report[/]")
         console.print()
@@ -292,6 +303,38 @@ def check_cmd(
         return
     analysed = f", last analysed {verdict.analysed}" if verdict.analysed else ""
     console.print(f"{verdict.malicious}/{verdict.total} engines{analysed}")
+
+
+@app.command("net")
+def net_cmd(
+    address: Annotated[str, typer.Argument(help="An IP address seen in a file.")],
+    db: Annotated[
+        Path | None,
+        typer.Option("--db", help="The iptoasn table to read. Default: the one this machine has."),
+    ] = None,
+) -> None:
+    """Say which network an address belongs to, from a table on disk.
+
+    Nothing is resolved and nobody is asked. The answer is only as current as
+    the file it came from, which is why the file and its date are printed too.
+    """
+    table = AsnTable.load(db) if db else default_table()
+    if table.empty:
+        console.print("[bold]No address table on this machine.[/bold]")
+        console.print(
+            "Download ip2asn-combined.tsv.gz from iptoasn.com, then either put it in "
+            "~/.dirsift/ or point at it:"
+        )
+        console.print(f"  [dim]{ENV_PATH}=/path/to/ip2asn-combined.tsv.gz[/dim]")
+        raise typer.Exit(code=2)
+
+    found = table.lookup(address)
+    if not found:
+        console.print(f"{defang(address)} is in no range of {table.source}.")
+        raise typer.Exit(code=1)
+    console.print(network_note(found.asn, found.name, found.country))
+    stamp = f", dated {table.stamp}" if table.stamp else ""
+    console.print(f"[dim]{table.source}{stamp}[/dim]")
 
 
 @app.command("web")
