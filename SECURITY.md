@@ -25,6 +25,12 @@ It sends only GET, holds no credentials, guesses no paths and writes nothing.
 Those limits are enforced in `src/dirsift/fetcher.py` and covered by
 `tests/test_rules.py`.
 
+One call goes somewhere other than the target: the hash check in
+`src/dirsift/enrich.py`. It sends a digest to VirusTotal, never a file, only for
+a file you press the button on, and only when `DIRSIFT_VT_API_KEY` is set. A
+scan never triggers it. Treat any change that makes that call automatic, or that
+widens what it sends, as a bug worth reporting.
+
 ## Handling what comes back
 
 Scan targets are hostile by assumption. The safe defaults DirSift uses, and the
@@ -45,6 +51,11 @@ ones it cannot enforce for you:
 
 ## Secrets
 
-API keys are not needed: DirSift talks to no third-party service. If you add an
-integration, read it from the environment, never log the config object, and keep
-`.env` in `.gitignore` where it already is.
+One key is read, and only from the environment: `DIRSIFT_VT_API_KEY`, for the
+hash check. It is never written into a run file, never printed, and never asked
+for in the interface. Without it the check refuses before a socket is opened.
+
+If you add another integration, read it from the environment the same way, never
+log the config object, and keep `.env` in `.gitignore` where it already is. A key
+that reaches a command line is readable by every process on a Windows machine, so
+set it with `setx` or a profile rather than passing it as an argument.

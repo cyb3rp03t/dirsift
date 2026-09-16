@@ -23,6 +23,8 @@ It does not decide anything for you. It collects.
                    by cyb3rp03t
 ```
 
+![A scan, the triage page it produces, a file read with its indicators marked, and two files turned into a rule](docs/demo.gif)
+
 ## What it does
 
 - **Walks the index.** Apache, nginx, IIS, Python `http.server`, Caddy, lighttpd,
@@ -40,6 +42,17 @@ It does not decide anything for you. It collects.
 - **Extracts indicators.** Addresses, URLs, domains, credential shapes, mutexes,
   registry keys and paths, each with the line it came from, deduped across
   defanged and live spellings, and defanged on the way out.
+- **Hashes what it read whole.** sha256 and md5 for every file that fitted under
+  the peek ceiling, in the listing, in the report and in `hashes.txt`. A file cut
+  at the ceiling gets no hash and says so, because half a file hashes to nothing
+  anyone can look up.
+- **Asks about a hash, when you ask it to.** One button, one file: the digest
+  goes to VirusTotal and comes back as a score like `6/64`. The sample is never
+  uploaded and nothing is sent until you press it.
+- **Writes YARA rules from what it read.** Tick the files, get one rule each,
+  keyed to the indicators that file carried rather than to its digest. The hash
+  stays in meta as identity: a hash matches one build, the address inside it
+  usually survives the next one.
 - **Writes the page.** A markdown triage report, plus a scaffold for the writeup
   that is left empty on purpose.
 
@@ -59,8 +72,12 @@ the code rather than in this file, and there are tests that fail if they break:
   The delay can be raised but not dropped to zero.
 - **Bounded reads.** File bodies are streamed and cut at a ceiling. DirSift wants
   the first bytes for a magic check, not the payload.
-- **Nothing leaves.** No lookups, no enrichment, no submissions. Enrichment leaks
-  what you are looking at, so it stays a decision you make yourself.
+- **Nothing leaves unless you send it.** The scan itself talks to the target and
+  to nothing else: no lookups, no enrichment, no submissions. The single
+  exception is the hash check, which is a button you press for one file at a
+  time, sends a digest and never a sample, and does nothing at all without an
+  API key. Enrichment leaks what you are looking at, so it stays a decision you
+  make rather than a default.
 
 The line this draws is the practical one from the Harvard Cyberlaw Clinic's
 researcher guidance: read what is served, take nothing that needs a credential,
@@ -105,6 +122,16 @@ dirsift report run.json -o triage.md
 # just the indicators, for piping
 dirsift iocs run.json --type ipv4
 
+# sha256, md5 and path for the files read whole
+dirsift hashes run.json
+
+# YARA rules from that run, keyed to the indicators each file carried
+dirsift rules run.json --out hunt.yar
+dirsift rules run.json --name install.bat
+
+# ask a public scanner about one digest, which is the only call that leaves
+dirsift check 13565af72d91125920826dd15db83bd6e48aecc1a466b9a639a6780eaf037342
+
 # the local triage UI
 dirsift web
 ```
@@ -113,15 +140,33 @@ Scanning is separate from analysing on purpose. `--json` saves everything the
 walk saw; `report` and `iocs` work from that file with no network at all. Sharpen
 a rule, re-run the analysis, leave the target alone.
 
-### The web UI
+### The console
 
-`dirsift web` serves a local page on `127.0.0.1:8000`: the inventory, the version
-families, the ranked entry points, the indicators with their context, the full
-listing, and a preview pane for any text file in the run. htmx is vendored into
-the package, so it works on an air-gapped analysis box.
+`dirsift web` serves a local page on `127.0.0.1:8000`. The run page leads with
+the target and the numbers that decide whether to keep going, then the ranked
+entry points, the inventory, the indicators, and the listing beside a preview
+panel, so picking a file never loses the list.
 
-The UI never reaches out on its own. A scan starts when you press the button, and
-every view after that is served from the saved run.
+The preview panel is where the reading happens:
+
+- both hashes with a copy button, and how much of the file was actually read
+- a warning when the magic bytes disagree with the extension
+- the contents, raw and escaped, with the run's indicators marked in place and
+  the lines numbered
+- the first bytes as hex, for anything binary
+- the indicators that came out of this file, the files that name it, and the
+  other versions in its family, with a compare button between two of them
+- a check button that asks a public scanner about the hash, and an open link
+  that hands the same hash to your browser instead, which costs no API key
+
+Tick files in the listing to build a YARA rule from them. `j` and `k` walk the
+listing from the keyboard, and the file you opened stays in the address bar, so
+a preview can be reloaded or handed to someone else.
+
+Fonts and htmx are vendored into the package, so the console works on an
+air-gapped analysis box. It never reaches out on its own: a scan starts when you
+press the button, every view after that is served from the saved run, and the
+hash check is the one thing that leaves, only when pressed.
 
 ## Options that matter
 
@@ -148,8 +193,8 @@ full binary and never executes anything.
 
 ```bash
 uv sync
-uv run pytest          # 56 tests
-uv run ruff check src tests
+uv run pytest          # 120 tests
+uv run ruff check .
 ```
 
 Every push runs the suite on Windows and Linux, against Python 3.11 and 3.13.

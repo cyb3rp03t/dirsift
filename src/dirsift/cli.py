@@ -13,10 +13,12 @@ from rich.table import Table
 
 from .analyze import analyze
 from .banner import banner
+from .enrich import MissingKey, api_key_from_env, lookup_hash
 from .extract import defang
 from .fetcher import ScopeError
 from .models import ScanResult
 from .report import human_size, render_markdown
+from .rules import build_rules
 from .walker import ScanOptions, scan
 
 
@@ -216,6 +218,80 @@ def iocs_cmd(
         if ioc_type and ioc.ioc_type != ioc_type:
             continue
         sys.stdout.write((ioc.value if fanged else ioc.defanged) + "\n")
+
+
+#: md5, sha1 or sha256 and nothing else.
+HASH_CHARS = set("0123456789abcdef")
+
+
+def _load(run: Path) -> ScanResult:
+    """A saved run, re-analysed. Nothing here touches the network."""
+    result = ScanResult.model_validate(json.loads(run.read_text(encoding="utf-8")))
+    result, _ = analyze(result)
+    return result
+
+
+@app.command("hashes")
+def hashes_cmd(
+    run: Annotated[Path, typer.Argument(help="A run saved with --json.")],
+) -> None:
+    """Print sha256, md5 and path for the files that were read whole."""
+    result = _load(run)
+    for entry in result.files:
+        if not entry.sha256:
+            continue
+        path = entry.url.removeprefix(result.root_url) or entry.name
+        sys.stdout.write(
+            f"{entry.sha256}  {entry.md5 or '-'}  {path}" + chr(10)
+        )
+
+
+@app.command("rules")
+def rules_cmd(
+    run: Annotated[Path, typer.Argument(help="A run saved with --json.")],
+    names: Annotated[
+        list[str] | None,
+        typer.Option("--name", "-n", help="Only these files. Repeat for more."),
+    ] = None,
+    out: Annotated[
+        Path | None, typer.Option("--out", "-o", help="Write the rules here.")
+    ] = None,
+) -> None:
+    """Write YARA rules from a saved run, keyed to the indicators each file carried."""
+    result = _load(run)
+    wanted = set(names or [])
+    picked = [entry for entry in result.files if not wanted or entry.name in wanted]
+    rules = build_rules(result, picked, run.stem)
+    if out:
+        out.write_text(rules, encoding="utf-8")
+        console.print(f"[dim]{len(picked)} file(s) ->[/dim] {out}")
+        return
+    sys.stdout.write(rules)
+
+
+@app.command("check")
+def check_cmd(
+    digest: Annotated[str, typer.Argument(help="An md5, sha1 or sha256.")],
+) -> None:
+    """Ask a public scanner about one hash. The digest goes out, never a file."""
+    digest = digest.strip().lower()
+    if len(digest) not in (32, 40, 64) or not set(digest) <= HASH_CHARS:
+        console.print("[bold]That is not a hash.[/bold] Pass an md5, a sha1 or a sha256.")
+        raise typer.Exit(code=2)
+    try:
+        verdict = lookup_hash(digest, api_key=api_key_from_env())
+    except MissingKey as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=2) from exc
+    except Exception as exc:  # noqa: BLE001 - the reason belongs on the terminal
+        console.print(f"The lookup failed: {type(exc).__name__}: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    if not verdict.found:
+        console.print("not seen by the scanner: nobody has submitted this file")
+        return
+    analysed = f", last analysed {verdict.analysed}" if verdict.analysed else ""
+    console.print(f"{verdict.malicious}/{verdict.total} engines{analysed}")
 
 
 @app.command("web")
