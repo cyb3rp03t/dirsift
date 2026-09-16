@@ -1,0 +1,37 @@
+<div class="card card-tight">
+  <p class="quiet" style="margin: 0 0 var(--space-2)">Hash</p>
+  <p class="data" style="margin: 0 0 var(--space-3); overflow-wrap: anywhere">{{ digest }}</p>
+
+  {% if note %}
+  <div class="notice is-warn">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path>
+    </svg>
+    <p>{{ note }}</p>
+  </div>
+  {% elif verdict %}
+  <ul class="chips">
+    {% if verdict.found %}
+    <li class="chip {% if verdict.malicious %}is-alert{% else %}is-good{% endif %}">
+      {{ verdict.malicious }}/{{ verdict.total }} engines
+    </li>
+    {% if verdict.analysed %}<li class="chip">last analysed {{ verdict.analysed }}</li>{% endif %}
+    {% else %}
+    <li class="chip is-warn">not seen by the scanner</li>
+    {% endif %}
+  </ul>
+  <p class="quiet" style="margin: var(--space-3) 0 0">
+    {% if verdict.found and verdict.malicious %}
+    Engines disagree often, and a count is not a verdict on its own. Open the
+    report before calling it.
+    {% elif verdict.found %}
+    Nothing flagged it, which is weaker than it looks for a file this fresh.
+    {% else %}
+    Nobody has submitted this file. That is either very new or very targeted.
+    {% endif %}
+    <a href="https://www.virustotal.com/gui/file/{{ digest }}"
+       target="_blank" rel="noreferrer noopener">open the report</a>
+  </p>
+  {% endif %}
+</div>

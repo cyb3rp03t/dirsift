@@ -90,6 +90,10 @@ def _failure_message(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
+#: A digest someone pastes: md5, sha1 or sha256, nothing else.
+HASH = re.compile(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")
+DIGEST_IN_FORM = Form(default="")
+
 #: Selected files arrive as a repeated field, from the form and from the link.
 PICKED_IN_FORM = Form(default=[])
 PICKED_IN_QUERY = Query(default=[])
@@ -275,6 +279,25 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
                     "running": len(live),
                 },
             },
+        )
+
+    @app.post("/verdict", response_class=HTMLResponse)
+    def hash_verdict(request: Request, digest: str = DIGEST_IN_FORM):
+        """Ask about a digest that arrived from somewhere other than a scan."""
+        digest = digest.strip().lower()
+        verdict = None
+        note = None
+        if not HASH.fullmatch(digest):
+            note = "That is not a hash. Paste an md5, a sha1 or a sha256."
+        else:
+            try:
+                verdict = lookup(digest, api_key=api_key_from_env())
+            except MissingKey as exc:
+                note = str(exc)
+            except Exception as exc:  # noqa: BLE001 - surfaced in the panel
+                note = f"The lookup failed: {type(exc).__name__}: {exc}"
+        return templates.TemplateResponse(
+            request, "_verdict.html", {"digest": digest, "verdict": verdict, "note": note}
         )
 
     @app.post("/scan")

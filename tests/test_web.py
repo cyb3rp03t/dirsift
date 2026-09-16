@@ -514,3 +514,38 @@ def test_a_hash_can_be_opened_in_the_scanner_without_a_key(tmp_path: Path):
     name = run_with_hashes(tmp_path)
     panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/run.bat")
     assert "https://www.virustotal.com/gui/file/" + "a" * 64 in panel
+
+
+# -- asking about a hash you already have ----------------------------------
+
+
+def test_a_pasted_hash_comes_back_with_a_score(tmp_path: Path):
+    """A hash often arrives from somewhere else; the console should answer for it."""
+    verdict = Verdict(found=True, malicious=21, total=63, analysed="2026-09-16")
+    calls: list[str] = []
+    client = TestClient(create_app(tmp_path, lookup=stub_lookup(verdict, calls)))
+
+    panel = client.post("/verdict", data={"digest": "1" * 64})
+
+    assert panel.status_code == 200
+    assert "21/63" in panel.text
+    assert calls == ["1" * 64]
+
+
+def test_something_that_is_not_a_hash_is_refused_before_anything_is_sent(tmp_path: Path):
+    calls: list[str] = []
+    client = TestClient(
+        create_app(tmp_path, lookup=stub_lookup(Verdict(found=False), calls))
+    )
+
+    panel = client.post("/verdict", data={"digest": "not a hash"})
+
+    assert panel.status_code == 200
+    assert "sha256" in panel.text.lower()
+    assert calls == []  # nothing left the machine
+
+
+def test_a_pasted_hash_without_a_key_says_how_to_set_one(tmp_path: Path):
+    client = TestClient(create_app(tmp_path, lookup=stub_lookup(None)))
+    panel = client.post("/verdict", data={"digest": "2" * 64})
+    assert "DIRSIFT_VT_API_KEY" in panel.text

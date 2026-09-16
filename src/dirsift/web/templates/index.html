@@ -62,6 +62,22 @@
   </div>
 </div>
 
+<h2 class="section-title">Check a hash</h2>
+<div class="card card-tight">
+  <form hx-post="/verdict" hx-target="#hash-result" hx-swap="innerHTML" class="button-row">
+    <label class="label" for="digest">Hash</label>
+    <input id="digest" type="text" name="digest" style="inline-size: 30rem"
+           placeholder="md5, sha1 or sha256 from anywhere"
+           autocomplete="off" spellcheck="false">
+    <button class="button is-quiet" type="submit">Ask the scanner</button>
+  </form>
+  <p class="quiet" style="margin-block: var(--space-3) 0">
+    For a hash that came from somewhere other than a scan. The digest goes to
+    VirusTotal and nothing else does.
+  </p>
+  <div id="hash-result" aria-live="polite" style="margin-block-start: var(--space-4)"></div>
+</div>
+
 {% if jobs %}
 <h2 class="section-title">Scans <span class="count">{{ jobs | length }} recent</span></h2>
 <div class="card card-tight">
