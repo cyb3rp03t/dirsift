@@ -1,15 +1,18 @@
 """YARA rules built from what the scan actually read.
 
-Two rules come out of a selection, because they answer different questions.
+One rule per file, and the rule matches on the indicators that file carries:
+the addresses it calls, the paths it writes, the mutex it takes. The digests go
+into meta as identity rather than into the condition, because a hash matches one
+build and nothing else, while the address inside it usually survives the next
+one. That mapping, this hash carried these indicators, is the thing worth
+keeping after the directory goes away.
 
-* An **exact** rule, for the files DirSift read whole: sha256 equality through
-  the hash module. It identifies those files and nothing else.
-* A **content** rule, from the head bytes and the strings that were read. It is
-  the one that might catch the next build, and the one that might catch
-  something innocent, so it is kept small and the meta says where it came from.
-
-A bounded read cannot produce a rule over a whole file. That limit is written
-into the rule rather than left for the next reader to discover.
+When a file gave up no indicators, the rule falls back to the strings the scan
+read, and after that to the first bytes, anchored at offset zero. A head that
+every file of its kind carries, an MZ or a PK, is not a rule at all: that file
+is named in a comment with the reason instead, because a rule matching every
+Windows binary is worse than no rule. A bounded read cannot produce a rule over
+a whole file, so each rule says where it came from rather than implying more.
 """
 
 from __future__ import annotations
@@ -17,20 +20,50 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from .extract import defang
-from .models import Entry, ScanResult
+from .models import Entry, Ioc, ScanResult
 
-#: How many bytes of a head go into a content rule.
+#: How many bytes of a head go into a fallback rule.
 HEAD_BYTES_IN_RULE = 12
 
-#: How many strings one file may contribute.
+#: Indicator types worth a string, and the prefix each gets in the rule.
+IOC_PREFIX = {
+    "url": "url",
+    "ipv4": "ip",
+    "ipv6": "ip",
+    "domain": "dom",
+    "email": "mail",
+    "path": "path",
+    "mutex": "mutex",
+    "secret": "secret",
+    "btc": "wallet",
+}
+
+#: Shorter than this catches half the internet, so it is left out.
+MIN_IOC = 7
+
+#: Headers every file of that kind carries. A rule on one of these would match
+#: every Windows binary, every zip, every PNG: a finding about nothing.
+GENERIC_HEADS = {
+    "4d5a": "a PE (Windows executable) header",
+    "7f454c46": "an ELF header",
+    "504b0304": "a zip header",
+    "89504e47": "a PNG header",
+    "25504446": "a PDF header",
+    "47494638": "a GIF header",
+    "ffd8ff": "a JPEG header",
+    "1f8b": "a gzip header",
+    "52617221": "a RAR header",
+    "377abcaf": "a 7z header",
+    "cafebabe": "a Java class header",
+}
+
+#: Lines from a file's own text, when it carried no indicators.
 STRINGS_PER_FILE = 3
-
-#: Strings shorter than this catch too much to be worth a line in a rule.
 MIN_STRING = 12
-
-#: And longer than this is usually one specific machine's path or a whole line
-#: of noise, so it is trimmed.
 MAX_STRING = 80
+
+#: More than this in one rule is noise; the strongest are the longest.
+MAX_IOCS_PER_FILE = 12
 
 
 def _identifier(text: str) -> str:
@@ -53,16 +86,25 @@ def _head_bytes(entry: Entry) -> str | None:
     return " ".join(format(byte, "02x") for byte in data)
 
 
+def _generic_head(entry: Entry) -> str | None:
+    """The name of the format this head belongs to, if it is one everyone shares."""
+    if not entry.head_hex:
+        return None
+    for prefix, description in GENERIC_HEADS.items():
+        if entry.head_hex.lower().startswith(prefix):
+            return description
+    return None
+
+
 def _strings_from(entry: Entry) -> list[str]:
     """Lines worth keeping: long enough to mean something, trimmed, deduplicated."""
     if not entry.text_preview:
         return []
     picked: list[str] = []
     for line in entry.text_preview.split(chr(10)):
-        candidate = line.strip()
+        candidate = line.strip()[:MAX_STRING]
         if len(candidate) < MIN_STRING or not candidate.isprintable():
             continue
-        candidate = candidate[:MAX_STRING]
         if candidate not in picked:
             picked.append(candidate)
         if len(picked) == STRINGS_PER_FILE:
@@ -70,90 +112,132 @@ def _strings_from(entry: Entry) -> list[str]:
     return picked
 
 
-def build_rules(result: ScanResult, entries: list[Entry], run_name: str) -> str:
-    """One YARA file covering the selected entries."""
-    stamp = datetime.now(UTC).strftime("%Y-%m-%d")
-    base = _identifier("dirsift_" + run_name)[:60]
-    hashed = [entry for entry in entries if entry.sha256]
-    lines: list[str] = []
+def _iocs_of(entry: Entry, iocs: list[Ioc]) -> list[Ioc]:
+    """The indicators this file carried, longest first, deduplicated."""
+    seen: set[str] = set()
+    picked: list[Ioc] = []
+    for ioc in sorted(iocs, key=lambda item: len(item.value), reverse=True):
+        if ioc.source_url != entry.url or ioc.ioc_type not in IOC_PREFIX:
+            continue
+        if len(ioc.value) < MIN_IOC or ioc.value in seen:
+            continue
+        seen.add(ioc.value)
+        picked.append(ioc)
+        if len(picked) == MAX_IOCS_PER_FILE:
+            break
+    return picked
 
-    if hashed:
-        lines.append('import "hash"')
-        lines.append("")
-        lines.append("rule " + base + "_exact")
-        lines.append("{")
-        lines.append("    meta:")
-        lines.append('        author = "cyb3rp03t"')
-        lines.append('        tool = "dirsift"')
-        lines.append('        run = "' + _quote(run_name) + '"')
-        lines.append('        target = "' + _quote(defang(result.root_url)) + '"')
-        lines.append('        created = "' + stamp + '"')
+
+def _literal(ioc: Ioc, entry: Entry) -> str:
+    """The form of the indicator that is actually in the file.
+
+    The extractor refangs on the way in, so a note written as
+    hxxp://panel[.]example[.]net carries the live spelling in the run. YARA
+    matches bytes, so the rule has to carry the spelling the file uses, or it
+    will never fire on the file it came from.
+    """
+    text = entry.text_preview or ""
+    if ioc.value and ioc.value in text:
+        return ioc.value
+    if ioc.defanged and ioc.defanged in text:
+        return ioc.defanged
+    return ioc.value
+
+
+def _meta(entry: Entry, result: ScanResult, run_name: str, stamp: str) -> list[str]:
+    lines = [
+        "    meta:",
+        '        author = "cyb3rp03t"',
+        '        tool = "dirsift"',
+        '        run = "' + _quote(run_name) + '"',
+        '        target = "' + _quote(defang(result.root_url)) + '"',
+        '        file = "' + _quote(entry.name) + '"',
+        '        created = "' + stamp + '"',
+    ]
+    if entry.sha256:
+        lines.append('        sha256 = "' + entry.sha256 + '"')
+    if entry.md5:
+        lines.append('        md5 = "' + entry.md5 + '"')
+    if entry.truncated:
         lines.append(
-            '        description = "Files read whole during the scan, by digest."'
+            '        caveat = "The scan stopped at the peek ceiling, so this describes '
+            'the head of the file, not all of it."'
         )
-        for number, entry in enumerate(hashed, start=1):
-            lines.append(
-                "        sample_" + str(number) + ' = "' + _quote(entry.name) + '"'
-            )
-        lines.append("    condition:")
-        conditions = [
-            'hash.sha256(0, filesize) == "' + entry.sha256 + '"' for entry in hashed
-        ]
-        lines.append("        " + (chr(10) + "        or ").join(conditions))
-        lines.append("}")
-        lines.append("")
+    else:
+        lines.append(
+            '        caveat = "Built from the bytes the scan read, which is the head of '
+            'the file rather than the whole of it."'
+        )
+    return lines
 
-    strings: list[str] = []
-    notes: list[str] = []
-    partial = False
-    for number, entry in enumerate(entries, start=1):
-        head = _head_bytes(entry)
-        if head:
-            strings.append(
-                "        $h" + str(number) + " = { " + head + " }  // head of " + entry.name
-            )
-        for index, value in enumerate(_strings_from(entry), start=1):
-            strings.append(
-                "        $s"
-                + str(number)
-                + "_"
-                + str(index)
+
+def _rule_for(entry: Entry, result: ScanResult, run_name: str, stamp: str) -> list[str]:
+    base = _identifier("dirsift_" + run_name + "_" + entry.name)[:96]
+    lines = ["rule " + base, "{"]
+    lines.extend(_meta(entry, result, run_name, stamp))
+    lines.append("    strings:")
+
+    carried = _iocs_of(entry, result.iocs)
+    if carried:
+        counts: dict[str, int] = {}
+        for ioc in carried:
+            prefix = IOC_PREFIX[ioc.ioc_type]
+            counts[prefix] = counts.get(prefix, 0) + 1
+            lines.append(
+                "        $"
+                + prefix
+                + str(counts[prefix])
                 + ' = "'
-                + _quote(value)
+                + _quote(_literal(ioc, entry))
                 + '" ascii'
             )
-        notes.append(entry.name)
-        partial = partial or entry.truncated
+        lines.append("    condition:")
+        lines.append("        2 of them" if len(carried) > 2 else "        any of them")
+        lines.append("}")
+        return lines
 
-    lines.append("rule " + base + "_content")
-    lines.append("{")
-    lines.append("    meta:")
-    lines.append('        author = "cyb3rp03t"')
-    lines.append('        tool = "dirsift"')
-    lines.append('        run = "' + _quote(run_name) + '"')
-    lines.append('        target = "' + _quote(defang(result.root_url)) + '"')
-    lines.append('        created = "' + stamp + '"')
-    lines.append(
-        '        description = "Head bytes and strings from '
-        + _quote(", ".join(notes))
-        + '."'
+    quoted = _strings_from(entry)
+    if quoted:
+        for number, value in enumerate(quoted, start=1):
+            lines.append('        $s' + str(number) + ' = "' + _quote(value) + '" ascii')
+        lines.append("    condition:")
+        lines.append("        2 of them" if len(quoted) > 2 else "        any of them")
+        lines.append("}")
+        return lines
+
+    generic = _generic_head(entry)
+    head = _head_bytes(entry)
+    if head and not generic:
+        lines.append("        $head = { " + head + " }")
+        lines.append("    condition:")
+        lines.append("        $head at 0")
+        lines.append("}")
+        return lines
+
+    reason = (
+        "its first bytes are " + generic + ", which every file of that kind carries"
+        if generic
+        else "the scan kept no bytes from it"
     )
-    if partial:
-        lines.append(
-            '        caveat = "Built from a partial read: DirSift stops at the peek '
-            'ceiling, so this covers the head of the file, not all of it."'
-        )
-    else:
-        lines.append(
-            '        caveat = "Built from the bytes the scan read, which is the head '
-            'of each file rather than the whole of it."'
-        )
-    lines.append("    strings:")
-    if strings:
-        lines.extend(strings)
-    else:
-        lines.append('        $nothing = "dirsift: no bytes were kept for these files"')
-    lines.append("    condition:")
-    lines.append("        any of them")
-    lines.append("}")
-    return chr(10).join(lines) + chr(10)
+    return [
+        "// No rule for " + entry.name + ": it gave up no indicators and " + reason + ".",
+        "// Read more of it before writing one; a rule on that alone would match",
+        "// everything of its kind and tell you nothing.",
+    ]
+
+
+def build_rules(result: ScanResult, entries: list[Entry], run_name: str) -> str:
+    """One YARA rule per selected file, keyed to the indicators it carried."""
+    stamp = datetime.now(UTC).strftime("%Y-%m-%d")
+    header = [
+        "// Built by dirsift from a scan of " + defang(result.root_url),
+        "// Run " + run_name + ", " + stamp,
+        "// Each rule matches on the indicators its file carried. The digests are in",
+        "// meta: identity for the sample the indicators came from, not the condition.",
+        "",
+    ]
+    blocks = [_rule_for(entry, result, run_name, stamp) for entry in entries]
+    if not blocks:
+        return chr(10).join(header) + "// Nothing was selected." + chr(10)
+    body = (chr(10) + chr(10)).join(chr(10).join(block) for block in blocks)
+    return chr(10).join(header) + body + chr(10)
