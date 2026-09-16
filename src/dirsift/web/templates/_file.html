@@ -69,18 +69,23 @@
         {% endif %}
       </span>
       {% if entry.sha256 %}
-      <button type="button" class="copy"
-              hx-post="/runs/{{ name }}/verdict?url={{ entry.url | urlencode }}"
-              hx-target="#preview" hx-swap="innerHTML">check</button>
+      <span class="button-row">
+        <button type="button" class="copy"
+                hx-post="/runs/{{ name }}/verdict?url={{ entry.url | urlencode }}"
+                hx-target="#preview" hx-swap="innerHTML">check</button>
+        <a class="copy" href="https://www.virustotal.com/gui/file/{{ entry.sha256 }}"
+           target="_blank" rel="noreferrer noopener">open</a>
+      </span>
       {% endif %}
     </div>
     {% if note %}
     <p class="quiet" style="margin: 0">{{ note }}</p>
     {% endif %}
     <p class="quiet" style="margin: 0">
-      Checking sends this hash to VirusTotal and nothing else. The file is never
-      uploaded, and nothing is sent until you press the button.
-      {%- if not verdict_ready %} No key is set, so the button will explain how.{% endif %}
+      Check asks VirusTotal from here and writes the score into the run: a hash
+      goes out, never the file. Open hands the same hash to your browser
+      instead, which costs no key and no quota.
+      {%- if not verdict_ready %} No key is set, so check will explain how to set one.{% endif %}
     </p>
     {% if not entry.sha256 and entry.truncated %}
     <p class="quiet" style="margin: 0">

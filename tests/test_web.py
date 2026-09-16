@@ -507,3 +507,10 @@ def test_a_rule_can_be_downloaded_as_a_file(tmp_path: Path):
     assert "rule dirsift" in reply.text
     assert 'author = "cyb3rp03t"' in reply.text  # the file itself is not escaped
     assert "attachment" in reply.headers.get("content-disposition", "")
+
+
+def test_a_hash_can_be_opened_in_the_scanner_without_a_key(tmp_path: Path):
+    """No key, no quota, no request from the tool: the browser goes, if asked."""
+    name = run_with_hashes(tmp_path)
+    panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/run.bat")
+    assert "https://www.virustotal.com/gui/file/" + "a" * 64 in panel

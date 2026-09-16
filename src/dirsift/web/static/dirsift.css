@@ -900,6 +900,13 @@ table.listing td.data {
   border-color: var(--signal);
 }
 
+a.copy {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  padding-block: var(--space-1);
+}
+
 pre.source {
   margin: 0;
   padding: var(--space-3);
