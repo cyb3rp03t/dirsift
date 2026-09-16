@@ -363,3 +363,59 @@ def test_markup_in_a_file_is_shown_not_run(tmp_path: Path):
     panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/panel.php")
     assert "<script>alert(1)</script>" not in panel
     assert "&lt;script&gt;" in panel
+
+
+# -- comparing two versions ------------------------------------------------
+
+
+def run_with_two_versions(runs_dir: Path) -> str:
+    def version(number: int, address: str, digest: str) -> Entry:
+        return Entry(
+            url=f"http://127.0.0.1:8080/cfg{number}.json",
+            name=f"cfg{number}.json",
+            depth=1,
+            kind="config",
+            cluster="cfg{n}.json",
+            fetched_bytes=40,
+            sha256=digest * 64,
+            md5=digest * 32,
+            text_preview='{\n  "c2": "' + address + '",\n  "interval": 900\n}',
+        )
+
+    return save_run(
+        runs_dir,
+        ScanResult(
+            root_url="http://127.0.0.1:8080/",
+            entries=[version(1, "203.0.113.24", "1"), version(2, "198.51.100.77", "3")],
+        ),
+    )
+
+
+def test_two_versions_of_a_file_can_be_compared(tmp_path: Path):
+    name = run_with_two_versions(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(
+        f"/runs/{name}/diff",
+        params={
+            "a": "http://127.0.0.1:8080/cfg1.json",
+            "b": "http://127.0.0.1:8080/cfg2.json",
+        },
+    )
+    assert page.status_code == 200
+    assert "cfg1.json" in page.text
+    assert "cfg2.json" in page.text
+    assert "203.0.113.24" in page.text
+    assert "198.51.100.77" in page.text
+
+
+def test_versions_kept_as_bytes_say_why_they_cannot_be_compared(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(
+        f"/runs/{name}/diff",
+        params={
+            "a": "http://127.0.0.1:8080/svc2.exe",
+            "b": "http://127.0.0.1:8080/svc3.exe",
+        },
+    )
+    assert page.status_code == 200
+    assert "svc2.exe" in page.text
+    assert "text" in page.text.lower()

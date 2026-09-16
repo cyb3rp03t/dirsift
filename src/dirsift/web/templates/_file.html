@@ -147,13 +147,18 @@
 
     {% if siblings %}
     <h3 class="section-title">Same family</h3>
-    <p class="button-row">
+    <div class="grid">
       {% for other in siblings %}
-      <button type="button" class="link-button" data-file-url="{{ other.url }}"
-              hx-get="/runs/{{ name }}/file?url={{ other.url | urlencode }}"
-              hx-target="#preview" hx-swap="innerHTML">{{ other.name }}</button>
+      <div class="button-row">
+        <button type="button" class="link-button" data-file-url="{{ other.url }}"
+                hx-get="/runs/{{ name }}/file?url={{ other.url | urlencode }}"
+                hx-target="#preview" hx-swap="innerHTML">{{ other.name }}</button>
+        <button type="button" class="copy"
+                hx-get="/runs/{{ name }}/diff?a={{ entry.url | urlencode }}&amp;b={{ other.url | urlencode }}"
+                hx-target="#preview" hx-swap="innerHTML">compare</button>
+      </div>
       {% endfor %}
-    </p>
+    </div>
     {% endif %}
 
     {% if not iocs and not entry.references and not referenced_by and not siblings %}

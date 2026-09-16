@@ -13,6 +13,7 @@ pulled from a CDN, so this works on an air-gapped analysis box.
 
 from __future__ import annotations
 
+import difflib
 import json
 import re
 import threading
@@ -134,6 +135,30 @@ def _source_html(text: str | None, iocs: list[Ioc]) -> Markup:
         for number, line in enumerate(escaped.split(chr(10)), start=1)
     ]
     return Markup(chr(10).join(numbered))
+
+
+def _diff_rows(left: Entry, right: Entry) -> list[dict[str, str]]:
+    """A unified diff of the text DirSift kept for two versions of one file."""
+    if not left.text_preview or not right.text_preview:
+        return []
+    rows = []
+    for line in difflib.unified_diff(
+        left.text_preview.split(chr(10)),
+        right.text_preview.split(chr(10)),
+        fromfile=left.name,
+        tofile=right.name,
+        lineterm="",
+    ):
+        if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
+            kind = "meta"
+        elif line.startswith("+"):
+            kind = "add"
+        elif line.startswith("-"):
+            kind = "del"
+        else:
+            kind = "same"
+        rows.append({"kind": kind, "text": line})
+    return rows
 
 
 def _preview(result: ScanResult, entry: Entry, name: str) -> dict[str, object]:
@@ -313,6 +338,20 @@ def create_app(runs_dir: Path = Path("runs")) -> FastAPI:
         if entry is None:
             return HTMLResponse("<p>not in this run</p>", status_code=404)
         return templates.TemplateResponse(request, "_file.html", _preview(result, entry, name))
+
+    @app.get("/runs/{name}/diff", response_class=HTMLResponse)
+    def file_diff(request: Request, name: str, a: str, b: str):
+        """Two versions of the same artefact, side by side in one panel."""
+        result, _ = load_run(name)
+        left = next((e for e in result.entries if e.url == a), None)
+        right = next((e for e in result.entries if e.url == b), None)
+        if left is None or right is None:
+            return HTMLResponse("<p>not in this run</p>", status_code=404)
+        return templates.TemplateResponse(
+            request,
+            "_diff.html",
+            {"name": name, "left": left, "right": right, "rows": _diff_rows(left, right)},
+        )
 
     @app.get("/runs/{name}/report.md", response_class=PlainTextResponse)
     def run_markdown(name: str):

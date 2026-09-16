@@ -934,6 +934,22 @@ pre.source .line::before {
   user-select: none;
 }
 
+.diff-line {
+  display: block;
+}
+
+.diff-line.is-add {
+  color: var(--good);
+}
+
+.diff-line.is-del {
+  color: var(--alert);
+}
+
+.diff-line.is-meta {
+  color: var(--ink-quiet);
+}
+
 pre.source .line.is-hit {
   background: var(--signal-tint);
 }

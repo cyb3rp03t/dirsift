@@ -1,0 +1,61 @@
+<div class="preview">
+  <div class="preview-head">
+    <p class="quiet" style="margin: 0">Two versions</p>
+    <p class="preview-name" style="margin: 0">{{ left.name }} against {{ right.name }}</p>
+    {% if left.cluster %}<ul class="chips"><li class="chip is-signal">{{ left.cluster }}</li></ul>{% endif %}
+  </div>
+
+  <div class="hash-grid">
+    <div class="hash-row">
+      <span class="name">size</span>
+      <span class="value">
+        {{ (left.size or left.fetched_bytes) | human_size }} against
+        {{ (right.size or right.fetched_bytes) | human_size }}
+      </span>
+      <span></span>
+    </div>
+    <div class="hash-row">
+      <span class="name">sha256</span>
+      <span class="value">
+        {% if left.sha256 and right.sha256 %}
+          {% if left.sha256 == right.sha256 %}the same bytes in both{% else %}different bytes{% endif %}
+        {% else %}
+          not hashed: at least one was cut at the peek ceiling
+        {% endif %}
+      </span>
+      <span></span>
+    </div>
+  </div>
+
+  {% if rows %}
+  <pre class="source" tabindex="0" role="region"
+       aria-label="Difference between {{ left.name }} and {{ right.name }}">{% for row in rows %}<span class="diff-line is-{{ row.kind }}">{{ row.text }}</span>
+{% endfor %}</pre>
+  <p class="quiet">
+    Only the text DirSift kept is compared, which is the head of each file
+    rather than the whole of it.
+  </p>
+  {% else %}
+  <div class="notice">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path>
+    </svg>
+    <p>
+      Neither version was kept as text, so there is nothing to compare line by
+      line. The sizes and hashes above are the comparison: same hash means the
+      same file under two names, and a different hash on a near identical size
+      usually means one build later.
+    </p>
+  </div>
+  {% endif %}
+
+  <div class="button-row">
+    <button type="button" class="link-button" data-file-url="{{ left.url }}"
+            hx-get="/runs/{{ name }}/file?url={{ left.url | urlencode }}"
+            hx-target="#preview" hx-swap="innerHTML">open {{ left.name }}</button>
+    <button type="button" class="link-button" data-file-url="{{ right.url }}"
+            hx-get="/runs/{{ name }}/file?url={{ right.url | urlencode }}"
+            hx-target="#preview" hx-swap="innerHTML">open {{ right.name }}</button>
+  </div>
+</div>
