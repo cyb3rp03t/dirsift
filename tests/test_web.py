@@ -324,3 +324,42 @@ def test_the_listing_flags_a_lying_extension(tmp_path: Path):
     row = re.search(r"<tr[^>]*>(?:(?!</tr>).)*invoice\.pdf(?:(?!</tr>).)*</tr>", page.text, re.S)
     assert row, "invoice.pdf is not in the listing"
     assert "mismatch" in row.group(0).lower()
+
+
+# -- reading the contents --------------------------------------------------
+
+
+def test_the_contents_mark_the_indicators_found_in_them(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/install.bat")
+    assert "<mark" in panel
+    assert "203.0.113.24" in panel  # raw inside the evidence, defanged everywhere else
+
+
+def test_the_contents_are_numbered_line_by_line(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/install.bat")
+    assert 'data-line="1"' in panel
+
+
+def test_markup_in_a_file_is_shown_not_run(tmp_path: Path):
+    """A listing can serve a page full of script tags. They are evidence, not code."""
+    name = save_run(
+        tmp_path,
+        ScanResult(
+            root_url="http://127.0.0.1:8080/",
+            entries=[
+                Entry(
+                    url="http://127.0.0.1:8080/panel.php",
+                    name="panel.php",
+                    depth=1,
+                    kind="web",
+                    fetched_bytes=40,
+                    text_preview="<script>alert(1)</script>",
+                )
+            ],
+        ),
+    )
+    panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/panel.php")
+    assert "<script>alert(1)</script>" not in panel
+    assert "&lt;script&gt;" in panel

@@ -77,7 +77,9 @@
     button.setAttribute("aria-pressed", String(wrapped));
   });
 
-  /* Find inside the open file. Marks every hit and says how many there are. */
+  /* Find inside the open file: marks the lines that match and counts them.
+     The contents carry markup now (line numbers, indicator marks), so the search
+     highlights whole lines rather than rewriting the text. */
   document.addEventListener("input", function (event) {
     var input = event.target.closest("[data-find]");
     if (!input) {
@@ -88,41 +90,30 @@
     if (!pre) {
       return;
     }
-    var source = pre.getAttribute("data-source");
-    if (source === null) {
-      source = pre.textContent;
-      pre.setAttribute("data-source", source);
-    }
-    var needle = input.value;
-    if (!needle) {
-      pre.textContent = source;
-      if (report) {
-        report.textContent = "";
-      }
-      return;
-    }
+    var needle = input.value.toLowerCase();
     var hits = 0;
-    var lower = source.toLowerCase();
-    var target = needle.toLowerCase();
-    var out = document.createDocumentFragment();
-    var at = 0;
-    while (true) {
-      var found = lower.indexOf(target, at);
-      if (found === -1) {
-        out.appendChild(document.createTextNode(source.slice(at)));
-        break;
+    var first = null;
+    pre.querySelectorAll(".line").forEach(function (line) {
+      var match = needle !== "" && line.textContent.toLowerCase().indexOf(needle) !== -1;
+      line.classList.toggle("is-hit", match);
+      if (match) {
+        hits += 1;
+        if (!first) {
+          first = line;
+        }
       }
-      out.appendChild(document.createTextNode(source.slice(at, found)));
-      var mark = document.createElement("mark");
-      mark.textContent = source.slice(found, found + needle.length);
-      out.appendChild(mark);
-      at = found + needle.length;
-      hits += 1;
-    }
-    pre.textContent = "";
-    pre.appendChild(out);
+    });
     if (report) {
-      report.textContent = hits === 1 ? "1 match" : String(hits) + " matches";
+      if (needle === "") {
+        report.textContent = "";
+      } else if (hits === 1) {
+        report.textContent = "1 line";
+      } else {
+        report.textContent = String(hits) + " lines";
+      }
+    }
+    if (first) {
+      first.scrollIntoView({ block: "nearest" });
     }
   });
 

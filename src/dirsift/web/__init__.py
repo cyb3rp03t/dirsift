@@ -14,6 +14,7 @@ pulled from a CDN, so this works on an air-gapped analysis box.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -24,12 +25,13 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 
 from ..analyze import analyze
 from ..classify import mismatch
 from ..extract import defang
 from ..fetcher import PrivateTargetError, ScopeError
-from ..models import Entry, ScanResult
+from ..models import Entry, Ioc, ScanResult
 from ..report import human_size, render_markdown
 from ..walker import ScanOptions, scan
 
@@ -111,6 +113,29 @@ def _hex_rows(head_hex: str | None) -> list[dict[str, str]]:
     return rows
 
 
+def _source_html(text: str | None, iocs: list[Ioc]) -> Markup:
+    """The file's own bytes, escaped, with its indicators marked and lines numbered.
+
+    The contents are evidence, so nothing is rewritten: the text is escaped so a
+    page full of script tags is shown rather than run, and the only thing added
+    is a mark around the values the extractor already found.
+    """
+    if not text:
+        return Markup("")
+    escaped = str(escape(text))
+    values = sorted(
+        {str(escape(ioc.value)) for ioc in iocs if ioc.value}, key=len, reverse=True
+    )
+    if values:
+        pattern = re.compile("|".join(re.escape(value) for value in values))
+        escaped = pattern.sub(lambda hit: "<mark>" + hit.group(0) + "</mark>", escaped)
+    numbered = [
+        '<span class="line" data-line="' + str(number) + '">' + line + "</span>"
+        for number, line in enumerate(escaped.split(chr(10)), start=1)
+    ]
+    return Markup(chr(10).join(numbered))
+
+
 def _preview(result: ScanResult, entry: Entry, name: str) -> dict[str, object]:
     """Everything the preview panel knows about one file, gathered in one place."""
     return {
@@ -130,6 +155,7 @@ def _preview(result: ScanResult, entry: Entry, name: str) -> dict[str, object]:
             if entry.cluster and other.cluster == entry.cluster and other.url != entry.url
         ],
         "hex_rows": _hex_rows(entry.head_hex),
+        "source_html": _source_html(entry.text_preview, result.iocs),
     }
 
 

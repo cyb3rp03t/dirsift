@@ -235,7 +235,7 @@
       {% if preview %}
         {% with entry = preview.entry, mismatch = preview.mismatch, iocs = preview.iocs,
                 referenced_by = preview.referenced_by, siblings = preview.siblings,
-                hex_rows = preview.hex_rows %}
+                hex_rows = preview.hex_rows, source_html = preview.source_html %}
           {% include "_file.html" %}
         {% endwith %}
       {% else %}

@@ -62,6 +62,7 @@
   --weight-bold: 700;
   --leading-tight: 1.15;
   --leading-body: 1.55;
+  --leading-code: 1.4;
   --tracking-wide: 0.08em;
   --tracking-brand: 0.22em;
 
@@ -907,7 +908,7 @@ pre.source {
   border-radius: var(--radius-md);
   font-family: var(--font-data);
   font-size: var(--text-sm);
-  line-height: var(--leading-body);
+  line-height: var(--leading-code);
   overflow: auto;
   max-block-size: var(--scroll-tall);
   white-space: pre;
@@ -917,6 +918,24 @@ pre.source {
 pre.source.is-wrapped {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+pre.source .line {
+  display: block;
+}
+
+pre.source .line::before {
+  content: attr(data-line);
+  display: inline-block;
+  inline-size: 3ch;
+  margin-inline-end: var(--space-3);
+  color: var(--ink-quiet);
+  text-align: end;
+  user-select: none;
+}
+
+pre.source .line.is-hit {
+  background: var(--signal-tint);
 }
 
 pre.source mark {
