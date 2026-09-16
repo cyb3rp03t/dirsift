@@ -221,6 +221,18 @@ def create_app(runs_dir: Path = Path("runs")) -> FastAPI:
         result, _ = load_run(name)
         return "\n".join(ioc.defanged for ioc in result.iocs)
 
+    @app.get("/runs/{name}/hashes.txt", response_class=PlainTextResponse)
+    def run_hashes(name: str):
+        """sha256, md5 and path, for the files that were read whole."""
+        result, _ = load_run(name)
+        rows = [
+            f"{entry.sha256}  {entry.md5 or '-'}  "
+            f"{entry.url.removeprefix(result.root_url) or entry.name}"
+            for entry in result.files
+            if entry.sha256
+        ]
+        return "\n".join(rows)
+
     @app.exception_handler(ScopeError)
     def scope_error(request: Request, exc: ScopeError):
         return HTMLResponse(f"<h1>refused</h1><p>{exc}</p>", status_code=400)

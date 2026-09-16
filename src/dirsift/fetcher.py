@@ -153,6 +153,11 @@ class Response:
         """Only meaningful for a body that was not cut off."""
         return None if self.truncated else hashlib.sha256(self.body).hexdigest()
 
+    @property
+    def md5(self) -> str | None:
+        """Same rule as sha256: half a file hashes to nothing anyone can look up."""
+        return None if self.truncated else hashlib.md5(self.body).hexdigest()
+
 
 class PoliteFetcher:
     """A deliberately slow, read-only HTTP client with a fixed scope."""

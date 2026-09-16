@@ -27,6 +27,9 @@ from .models import Entry, ScanError, ScanResult
 #: Text kept per file for the reference and indicator passes.
 PREVIEW_CHARS = 200_000
 
+#: Bytes kept per file for the hex view. They were fetched anyway.
+HEAD_BYTES = 256
+
 
 @dataclass
 class ScanOptions:
@@ -188,6 +191,9 @@ def scan(root_url: str, options: ScanOptions | None = None) -> ScanResult:
             entry.content_type = response.content_type or None
             entry.fetched_bytes = len(response.body)
             entry.sha256 = response.sha256
+            entry.md5 = response.md5
+            entry.truncated = response.truncated
+            entry.head_hex = response.body[:HEAD_BYTES].hex()
             classify(entry, response.body[:8192])
 
             # A listing can link to a subdirectory without a trailing slash.

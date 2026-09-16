@@ -128,7 +128,7 @@
       <thead>
         <tr>
           <th>path</th><th>type</th><th class="num">size</th>
-          <th>modified</th><th>family</th>
+          <th>sha256</th><th>modified</th><th>family</th>
         </tr>
       </thead>
       <tbody>
@@ -145,6 +145,12 @@
           </td>
           <td class="dim">{{ "dir" if entry.is_dir else entry.kind }}</td>
           <td class="num dim">{{ (entry.size or entry.fetched_bytes) | human_size }}</td>
+          <td class="dim nowrap">
+            {%- if entry.sha256 %}<span title="{{ entry.sha256 }}">{{ entry.sha256[:12] }}</span>
+            {%- elif entry.truncated %}partial
+            {%- elif not entry.is_dir %}-
+            {%- endif %}
+          </td>
           <td class="dim nowrap">{{ entry.modified or "-" }}</td>
           <td class="dim">{{ entry.cluster or "" }}</td>
         </tr>

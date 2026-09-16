@@ -67,7 +67,12 @@ class Entry(BaseModel):
 
     # Filled in only when the entry was actually fetched.
     sha256: str | None = None
+    md5: str | None = None
     fetched_bytes: int | None = None
+    # The read stopped at the peek ceiling, so the bytes are a head, not the file.
+    truncated: bool = False
+    # First bytes as hex, kept for the hex view. Already fetched; nothing extra is read.
+    head_hex: str | None = None
     text_preview: str | None = None
 
     # Set by the cluster stage: the label of the version family this belongs to.

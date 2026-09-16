@@ -174,7 +174,21 @@ def render_markdown(
         add("## Worth a second look")
         add("")
         for name, note in notable[:40]:
-            add(f"- `{name}` — {note}")
+            add(f"- `{name}`: {note}")
+        add("")
+
+    # -- hashes ------------------------------------------------------------
+    hashed = [entry for entry in result.files if entry.sha256]
+    if hashed:
+        add("## Hashes")
+        add("")
+        add("Only the files DirSift read whole. A file cut at the peek ceiling has no ")
+        add("hash here, because half a file hashes to nothing anyone can look up.")
+        add("")
+        add("| Path | SHA256 | MD5 |")
+        add("|---|---|---|")
+        for entry in hashed[:max_rows]:
+            add(f"| `{_rel(entry, root)}` | `{entry.sha256}` | `{entry.md5 or '-'}` |")
         add("")
 
     # -- indicators --------------------------------------------------------

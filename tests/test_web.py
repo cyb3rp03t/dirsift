@@ -126,3 +126,49 @@ def test_the_header_names_the_dashboard_and_the_brand_leads_there(tmp_path: Path
     assert re.search(r'<a[^>]*href="/"[^>]*>\s*DIRSIFT\s*</a>', header)
     assert re.search(r'<a[^>]*href="/"[^>]*>\s*dashboard\s*</a>', header)
     assert not re.search(r">\s*runs\s*</a>", header)
+
+
+# -- hashes ----------------------------------------------------------------
+
+
+def run_with_hashes(runs_dir: Path) -> str:
+    return save_run(
+        runs_dir,
+        ScanResult(
+            root_url="http://127.0.0.1:8080/",
+            listing_flavor="python",
+            entries=[
+                Entry(
+                    url="http://127.0.0.1:8080/run.bat",
+                    name="run.bat",
+                    depth=1,
+                    fetched_bytes=26,
+                    sha256="a" * 64,
+                    md5="b" * 32,
+                ),
+                Entry(
+                    url="http://127.0.0.1:8080/big.exe",
+                    name="big.exe",
+                    depth=1,
+                    fetched_bytes=16,
+                    truncated=True,
+                ),
+            ],
+        ),
+    )
+
+
+def test_hashes_txt_lists_only_the_files_that_were_read_whole(tmp_path: Path):
+    name = run_with_hashes(tmp_path)
+    body = TestClient(create_app(tmp_path)).get(f"/runs/{name}/hashes.txt").text
+    assert "a" * 64 in body
+    assert "b" * 32 in body
+    assert "run.bat" in body
+    assert "big.exe" not in body
+
+
+def test_the_listing_shows_a_hash_and_says_when_a_read_was_partial(tmp_path: Path):
+    name = run_with_hashes(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}")
+    assert "a" * 12 in page.text  # the short form of the sha256
+    assert "partial" in page.text
