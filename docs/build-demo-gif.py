@@ -8,9 +8,11 @@ Usage, from the repository root:
 The two numbers are the milliseconds each frame is held and the palette size.
 At 5 frames a second on the way in, 120 milliseconds a frame plays back about
 one and a half times faster than the session ran. Going much below 50 is a
-mistake: the whole recording flashes past and the result reads as a still. Frames identical to the one before are dropped and the one
-before is held for longer instead, which is what keeps a recording of a mostly
-static page small enough for a README.
+mistake: the whole recording flashes past and the result reads as a still.
+
+Frames identical to the one before are dropped and the one before is held for
+longer instead, which is what keeps a recording of a mostly static page small
+enough for a README.
 """
 
 import sys
