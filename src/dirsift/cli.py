@@ -19,6 +19,26 @@ from .models import ScanResult
 from .report import human_size, render_markdown
 from .walker import ScanOptions, scan
 
+
+def _force_utf8_stdio() -> None:
+    """Make stdout and stderr carry UTF-8 whatever the console is set to.
+
+    On Windows the console defaults to the system code page (cp1254 on a
+    Turkish install), and the moment a scan turns up a filename outside it the
+    whole report dies with a UnicodeEncodeError. Attacker filenames are
+    routinely non-ASCII, sometimes deliberately so, and the banner is box
+    drawing characters throughout. Pipes and captured streams may not expose
+    reconfigure, so failures here are not fatal.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+_force_utf8_stdio()
+
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,

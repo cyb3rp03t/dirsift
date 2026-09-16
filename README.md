@@ -1,5 +1,7 @@
 # DirSift
 
+[![CI](https://github.com/cyb3rp03t/dirsift/actions/workflows/ci.yml/badge.svg)](https://github.com/cyb3rp03t/dirsift/actions/workflows/ci.yml)
+
 **Triage an open directory: walk it, classify what is there, find the file that
 drives the rest, and write the notes.**
 
@@ -146,9 +148,14 @@ full binary and never executes anything.
 
 ```bash
 uv sync
-uv run pytest          # 51 tests
+uv run pytest          # 56 tests
 uv run ruff check src tests
 ```
+
+Every push runs the suite on Windows and Linux, against Python 3.11 and 3.13.
+That matrix is not decoration: the failures it catches are the ones that never
+appear on the machine the code was written on. A console that cannot encode an
+attacker's filename, a path separator, a line ending off an IIS box.
 
 The tests that matter most are in `tests/test_rules.py`: they stand up a local
 server and assert that only GET is ever sent, that a 401 ends the walk, that no
