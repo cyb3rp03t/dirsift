@@ -7,6 +7,7 @@ sharper rules each time, without knocking on the target again.
 
 from __future__ import annotations
 
+import ipaddress
 from urllib.parse import urlparse
 
 from .asn import AsnTable, default_table
@@ -40,6 +41,24 @@ def _placeable(ioc) -> str:
     return ""
 
 
+def _target_address(result: ScanResult) -> str:
+    """The target's own address, when the run knows one without asking.
+
+    A scan records the address it connected to. Runs saved before that was
+    added do not have it, but plenty of open directories are visited by
+    address in the first place, and reading it out of the URL resolves
+    nothing: it was already written there.
+    """
+    if result.target_ip:
+        return result.target_ip
+    host = urlparse(result.root_url).hostname or ""
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return ""
+    return host
+
+
 def place_in_networks(result: ScanResult, table: AsnTable) -> None:
     """Say which network each address belongs to, from a table already on disk."""
     if table.empty:
@@ -53,8 +72,10 @@ def place_in_networks(result: ScanResult, table: AsnTable) -> None:
         found = table.lookup(target)
         if found:
             ioc.asn, ioc.as_name, ioc.country = found.asn, found.name, found.country
-    if result.target_ip:
-        found = table.lookup(result.target_ip)
+    address = _target_address(result)
+    if address:
+        result.target_ip = address
+        found = table.lookup(address)
         if found:
             result.target_asn = found.asn
             result.target_as_name = found.name

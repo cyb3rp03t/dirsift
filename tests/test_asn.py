@@ -284,3 +284,25 @@ def test_a_url_with_a_name_for_a_host_is_left_alone(tmp_path: Path):
     )
     result, _ = analyze(result, asn_table=AsnTable.load(table_file(tmp_path)))
     assert all(ioc.asn is None for ioc in result.iocs)
+
+
+def test_a_target_written_as_an_address_needs_no_resolving(tmp_path: Path):
+    """An older run has no resolved address, but its URL may already be one."""
+    from dirsift.analyze import analyze
+    from dirsift.models import ScanResult
+
+    result = ScanResult(root_url="http://203.0.113.24:8080/files/")
+    result, _ = analyze(result, asn_table=AsnTable.load(table_file(tmp_path)))
+    assert result.target_ip == "203.0.113.24"
+    assert result.target_asn == 64496
+    assert result.target_country == "NL"
+
+
+def test_a_target_written_as_a_name_stays_unresolved(tmp_path: Path):
+    from dirsift.analyze import analyze
+    from dirsift.models import ScanResult
+
+    result = ScanResult(root_url="http://files.example.org/pub/")
+    result, _ = analyze(result, asn_table=AsnTable.load(table_file(tmp_path)))
+    assert result.target_ip is None
+    assert result.target_asn is None
