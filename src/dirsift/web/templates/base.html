@@ -4,236 +4,49 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}DirSift{% endblock %}</title>
-<script src="/static/htmx.min.js"></script>
-<style>
-  /* ---- tokens ---------------------------------------------------------
-     One layer, defined once, used everywhere. Nothing below this block
-     hardcodes a colour, a size or a duration. */
-  :root {
-    /* colour */
-    --bg: #0e1116;
-    --surface: #161b22;
-    --surface-sunken: #0b0e13;
-    --border: #2b333e;
-    --text: #dbe2ec;
-    --text-muted: #9aa7b8;
-    --accent: #62d8ee;
-    --accent-ink: #06222a;
-    --warning: #f0c24f;
-    --danger: #ef7b84;
-    --success: #86c98f;
-    --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
-
-    /* type */
-    --font-mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas,
-                 monospace;
-    --text-xs: 0.786rem;   /* 11px  */
-    --text-sm: 0.857rem;   /* 12px  */
-    --text-md: 0.929rem;   /* 13px  */
-    --text-base: 1rem;     /* 14px  */
-    --text-lg: 1.286rem;   /* 18px  */
-    --text-xl: 1.857rem;   /* 26px, the one thing that leads */
-    --leading: 1.55;
-    --tracking-wide: 0.12em;
-    --tracking-brand: 0.18em;
-
-    /* space */
-    --space-1: 0.25rem;
-    --space-2: 0.5rem;
-    --space-3: 0.75rem;
-    --space-4: 1rem;
-    --space-5: 1.5rem;
-    --space-6: 2rem;
-
-    /* shape and motion */
-    --radius-sm: 4px;
-    --radius-md: 6px;
-    --radius-pill: 10px;
-    --duration-fast: 120ms;
-    --easing: cubic-bezier(0.2, 0, 0.2, 1);
-    --measure: 1200px;
-    --scroll-max: 28rem;
-  }
-
-  *, *::before, *::after { box-sizing: border-box; }
-
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: 14px; /* ds-allow-hardcode: the rem base the --text-* tokens derive from */
-    line-height: var(--leading);
-  }
-
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-
-  :where(a, button, input, select, summary, [tabindex]):focus-visible {
-    outline: none;
-    box-shadow: var(--focus-ring);
-    border-radius: var(--radius-sm);
-  }
-
-  /* ---- layout --------------------------------------------------------- */
-  header {
-    border-bottom: 1px solid var(--border);
-    padding: var(--space-3) var(--space-5);
-    display: flex; align-items: baseline; gap: var(--space-4); flex-wrap: wrap;
-  }
-  header .brand {
-    color: var(--accent); font-weight: 700; letter-spacing: var(--tracking-brand);
-  }
-  header .tag { color: var(--text-muted); font-size: var(--text-sm); }
-
-  main { padding: var(--space-5); max-width: var(--measure); }
-
-  h2 {
-    font-size: var(--text-sm); text-transform: uppercase;
-    letter-spacing: var(--tracking-wide); color: var(--text-muted);
-    margin: var(--space-6) 0 var(--space-2); font-weight: 600;
-  }
-  h2:first-child { margin-top: 0; }
-
-  .lead {
-    font-size: var(--text-xl); font-weight: 700; line-height: 1.25;
-    margin: 0 0 var(--space-2); overflow-wrap: anywhere;
-  }
-  /* The target is the one thing that leads on a page. A file opened in the
-     preview is a subhead under it, not a second headline. */
-  .subhead {
-    font-size: var(--text-lg); font-weight: 700; line-height: 1.3;
-    margin: 0 0 var(--space-2); overflow-wrap: anywhere;
-  }
-
-  .panel {
-    min-width: 0;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: var(--space-3) var(--space-4);
-    margin-bottom: var(--space-3);
-  }
-
-  .split {
-    display: grid; gap: var(--space-3);
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-  /* minmax(0, 1fr) rather than 1fr: a bare 1fr track keeps min-width:auto, so a
-     wide table inside it grows the column and pushes the page sideways instead
-     of scrolling within its own wrapper. */
-  @media (max-width: 900px) { .split { grid-template-columns: minmax(0, 1fr); } }
-
-  .row { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: center; }
-  .grow { flex: 1 1 min(20rem, 100%); min-width: 0; }
-
-  /* ---- tables ---------------------------------------------------------
-     Wrapped so a wide table scrolls inside its own box instead of pushing
-     the page sideways. The wrapper is focusable so the scroll is reachable
-     from the keyboard. */
-  .table-wrap { overflow-x: auto; min-width: 0; max-width: 100%; }
-  .scroll { max-height: var(--scroll-max); overflow: auto; }
-  .scroll:focus-visible, .table-wrap:focus-visible { box-shadow: var(--focus-ring); }
-
-  table { border-collapse: collapse; width: 100%; font-size: var(--text-md); }
-  th, td {
-    text-align: left; padding: var(--space-1) var(--space-3) var(--space-1) 0;
-    border-bottom: 1px solid var(--border); vertical-align: top;
-  }
-  th {
-    color: var(--text-muted); font-weight: 600; font-size: var(--text-xs);
-    text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;
-  }
-  td.num, th.num { text-align: right; }
-
-  /* ---- controls -------------------------------------------------------- */
-  input, select, button {
-    font: inherit;
-    background: var(--surface-sunken); color: var(--text);
-    border: 1px solid var(--border); border-radius: var(--radius-sm);
-    padding: var(--space-2) var(--space-3);
-  }
-  input[type="checkbox"] { padding: 0; accent-color: var(--accent); }
-  input.w-xs { width: 4rem; }
-  input.w-sm { width: 5rem; }
-
-  button {
-    background: var(--accent); color: var(--accent-ink); border: 0;
-    font-weight: 700; cursor: pointer;
-    transition: filter var(--duration-fast) var(--easing);
-  }
-  button:hover { filter: brightness(1.12); }
-  button:active { filter: brightness(0.94); }
-  button[disabled] { opacity: 0.5; cursor: not-allowed; filter: none; }
-
-  label {
-    color: var(--text-muted); font-size: var(--text-sm);
-    display: inline-flex; align-items: center; gap: var(--space-2);
-  }
-
-  /* Loading a preview is an action on this page, not navigation, so it is a
-     button. It is styled as a link because that is what it reads as. */
-  button.linkish {
-    background: none; color: var(--accent); border: 0; padding: 0;
-    font: inherit; font-weight: 400; text-align: left; cursor: pointer;
-  }
-  button.linkish:hover { text-decoration: underline; filter: none; }
-  button.linkish[aria-busy="true"] { opacity: 0.6; }
-
-  /* ---- text helpers ---------------------------------------------------- */
-  .dim { color: var(--text-muted); }
-  .warn { color: var(--warning); }
-  .bad { color: var(--danger); }
-  .good { color: var(--success); }
-  .score { color: var(--warning); font-weight: 700; }
-  .nowrap { white-space: nowrap; }
-  .fs-xs { font-size: var(--text-xs); }
-  .fs-sm { font-size: var(--text-sm); }
-  .flush { margin: 0; }
-  .flush-top { margin-top: 0; }
-  .stack-1 { margin: 0 0 var(--space-1); }
-  .stack-2 { margin: 0 0 var(--space-2); }
-  .stack-3 { margin: 0 0 var(--space-3); }
-  .gap-top { margin: var(--space-3) 0 0; }
-
-  .pill {
-    display: inline-block; padding: 0 var(--space-2);
-    border: 1px solid var(--border); border-radius: var(--radius-pill);
-    font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap;
-  }
-
-  pre {
-    background: var(--surface-sunken); border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: var(--space-3);
-    overflow-x: auto; font-size: var(--text-md); margin: 0;
-  }
-
-  footer {
-    color: var(--text-muted); font-size: var(--text-sm);
-    padding: var(--space-6) var(--space-5);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
-  }
-</style>
+<link rel="stylesheet" href="/static/dirsift.css">
+<script src="/static/htmx.min.js" defer></script>
+<script src="/static/dirsift.js" defer></script>
 </head>
 <body>
-<header>
-  <a class="brand" href="/">DIRSIFT</a>
-  <span class="tag">someone left the lights on</span>
-  <span class="grow"></span>
-  <a href="/">dashboard</a>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="app-header">
+  <a class="brand" href="/">
+    <svg class="brand-mark" width="20" height="20" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M3 5h18"></path><path d="M6 12h12"></path><path d="M10 19h4"></path>
+    </svg>
+    DIRSIFT
+  </a>
+  <span class="quiet">someone left the lights on</span>
+  <nav class="app-nav" aria-label="Main">
+    <a href="/"{% block nav_dashboard %}{% endblock %}>dashboard</a>
+  </nav>
 </header>
-<main>
+
+<main id="main">
 {% block backlink %}
-<p class="flush"><a href="/"><span aria-hidden="true">&larr;</span> Back to Dashboard</a></p>
+<a class="backlink" href="/">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path>
+  </svg>
+  Back to Dashboard
+</a>
 {% endblock %}
 {% block body %}{% endblock %}
 </main>
-<footer>
-  Reads what a server volunteers. No path guessing, no credentials, no writes.
-  Targets and indicators are defanged; file previews are shown raw, because the
-  contents are the evidence.
+
+<footer class="app-footer">
+  <p>
+    DirSift reads what a server volunteers. It guesses no paths, carries no
+    credentials, writes nothing, and sends nothing to a third party.
+  </p>
+  <p>
+    Targets and indicators are defanged everywhere they are printed. File
+    contents are shown raw, because the contents are the evidence.
+  </p>
 </footer>
 </body>
 </html>

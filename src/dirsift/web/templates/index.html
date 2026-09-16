@@ -1,49 +1,84 @@
 {% extends "base.html" %}
+{% block nav_dashboard %} aria-current="page"{% endblock %}
 {% block backlink %}{% endblock %}
 {% block body %}
 
-<h2>New scan</h2>
-<div class="panel">
-  <form method="post" action="/scan">
-    <div class="row">
-      <label class="grow" for="url">
-        <span class="nowrap">target</span>
-        <input class="grow" id="url" type="text" name="url"
-               placeholder="http://203.0.113.10:8080/files/" required autofocus>
-      </label>
-      <label for="depth">depth
-        <input class="w-xs" id="depth" type="number" name="depth" value="2" min="0" max="6">
-      </label>
-      <label for="delay">delay
-        <input class="w-sm" id="delay" type="number" name="delay" value="1.0"
-               min="0.2" max="30" step="0.1">s
-      </label>
-      <label><input type="checkbox" name="peek" value="true" checked> read file heads</label>
-      <label><input type="checkbox" name="allow_private" value="true"> allow private</label>
-      <button type="submit">scan</button>
+<div class="grid grid-hero">
+  <section class="card card-hero" aria-labelledby="scan-title">
+    <h1 class="display" id="scan-title">Triage an open directory</h1>
+    <p class="lede">
+      Point DirSift at a listing someone left open. It walks what the index
+      actually links, reads the head of each file, and comes back with the
+      families, the indicators and the file that drives the rest.
+    </p>
+
+    <form method="post" action="/scan" class="grid" style="margin-block-start: var(--space-5)">
+      <div class="field">
+        <label class="label" for="url">Target</label>
+        <input id="url" type="text" name="url" required autofocus
+               placeholder="http://203.0.113.10:8080/files/"
+               autocomplete="off" spellcheck="false">
+      </div>
+
+      <div class="button-row">
+        <div class="field" style="inline-size: 6rem">
+          <label class="label" for="depth">Depth</label>
+          <input id="depth" type="number" name="depth" value="2" min="0" max="6">
+        </div>
+        <div class="field" style="inline-size: 7rem">
+          <label class="label" for="delay">Delay</label>
+          <input id="delay" type="number" name="delay" value="1.0" min="0.2" max="30" step="0.1">
+        </div>
+        <label class="inline"><input type="checkbox" name="peek" value="true" checked> read file heads</label>
+        <label class="inline"><input type="checkbox" name="allow_private" value="true"> allow private</label>
+        <button class="button" type="submit">Start scan</button>
+      </div>
+    </form>
+
+    <p class="quiet" style="margin-block-end: 0">
+      One request per second by default, and the walk follows only links the
+      listing contains. Loopback and RFC1918 targets need the allow private box.
+    </p>
+  </section>
+
+  <div class="grid grid-tiles-2" role="group" aria-label="What is saved here">
+    <div class="tile">
+      <span class="label">Saved runs</span>
+      <span class="value">{{ totals.runs }}</span>
+      <span class="note">re-readable without touching the target</span>
     </div>
-  </form>
-  <p class="dim gap-top">
-    One request per second by default. The walk follows only links the listing
-    actually contains.
-  </p>
+    <div class="tile">
+      <span class="label">Files triaged</span>
+      <span class="value">{{ totals.files }}</span>
+    </div>
+    <div class="tile">
+      <span class="label">Indicators</span>
+      <span class="value">{{ totals.iocs }}</span>
+    </div>
+    <div class="tile">
+      <span class="label">Running now</span>
+      <span class="value {% if not totals.running %}is-quiet{% endif %}">{{ totals.running }}</span>
+    </div>
+  </div>
 </div>
 
 {% if jobs %}
-<h2>Recent jobs</h2>
-<div class="panel">
-  <div class="table-wrap" tabindex="0" role="region" aria-label="Recent scan jobs">
+<h2 class="section-title">Scans <span class="count">{{ jobs | length }} recent</span></h2>
+<div class="card card-tight">
+  <div class="scroll-region is-mid" tabindex="0" role="region" aria-label="Recent scans">
     <table>
       <thead>
-        <tr><th>started</th><th>target</th><th>state</th><th><span class="dim">open</span></th></tr>
+        <tr><th>started</th><th>target</th><th>state</th><th>open</th></tr>
       </thead>
       <tbody>
         {% for job in jobs %}
         <tr>
-          <td class="dim nowrap">{{ job.started_at.strftime("%H:%M:%S") }}</td>
-          <td>{{ job.url | defang }}</td>
-          <td class="{{ 'good' if job.state == 'done' else 'bad' if job.state == 'failed' else 'warn' }}">
-            {{ job.state }}
+          <td class="quiet nowrap">{{ job.started_at.strftime("%H:%M:%S") }}</td>
+          <td class="data">{{ job.url | defang }}</td>
+          <td>
+            <span class="chip {% if job.state == 'done' %}is-good{% elif job.state == 'failed' %}is-alert{% else %}is-signal{% endif %}">
+              {{ job.state }}
+            </span>
           </td>
           <td><a href="/jobs/{{ job.id }}">open</a></td>
         </tr>
@@ -54,34 +89,45 @@
 </div>
 {% endif %}
 
-<h2>Saved runs</h2>
-<div class="panel">
-  {% if runs %}
-  <div class="table-wrap" tabindex="0" role="region" aria-label="Saved runs">
-    <table>
-      <thead>
-        <tr><th>run</th><th>target</th><th class="num">files</th><th>open</th></tr>
-      </thead>
-      <tbody>
-        {% for run in runs %}
-        <tr>
-          <td class="dim nowrap">{{ run.name[:15] }}</td>
-          <td>{{ run.url | defang }}</td>
-          <td class="num">{{ run.files }}</td>
-          <td class="nowrap">
-            <a href="/runs/{{ run.name }}">triage</a>
-            &middot; <a href="/runs/{{ run.name }}/report.md">md</a>
-            &middot; <a href="/runs/{{ run.name }}/iocs.txt">iocs</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="dim flush">Nothing here yet. Scans land in the runs directory as JSON and
-  can be re-analysed later without touching the target again.</p>
-  {% endif %}
+<h2 class="section-title">Saved runs <span class="count">{{ runs | length }}</span></h2>
+{% if runs %}
+<div class="grid grid-halves">
+  {% for run in runs %}
+  <article class="card card-tight">
+    <p class="data" style="margin: 0 0 var(--space-2)">
+      <a href="/runs/{{ run.name }}">{{ run.url | defang }}</a>
+    </p>
+    <ul class="chips">
+      <li class="chip">{{ run.flavor or "unknown index" }}</li>
+      <li class="chip">{{ run.files }} files</li>
+      <li class="chip">{{ run.dirs }} dirs</li>
+      <li class="chip {% if run.iocs %}is-signal{% endif %}">{{ run.iocs }} indicators</li>
+    </ul>
+    <p class="quiet mono-sm" style="margin: var(--space-3) 0 var(--space-2)">{{ run.name }}</p>
+    <p class="button-row" style="margin: 0">
+      <a href="/runs/{{ run.name }}">triage</a>
+      <a href="/runs/{{ run.name }}/report.md">markdown</a>
+      <a href="/runs/{{ run.name }}/iocs.txt">indicators</a>
+      <a href="/runs/{{ run.name }}/hashes.txt">hashes</a>
+    </p>
+  </article>
+  {% endfor %}
 </div>
+{% else %}
+<div class="card">
+  <h3 style="margin-block-end: var(--space-2)">Nothing scanned yet</h3>
+  <p class="lede" style="margin-block-start: 0">
+    A finished scan lands here as JSON. From then on the triage page, the
+    markdown report, the indicator list and the hashes are all served from that
+    file, so you can sharpen a rule and read the same run again without sending
+    the target another request.
+  </p>
+  <p class="quiet">
+    Start with a directory you are allowed to read. A local
+    <span class="data">http.server</span> works: tick allow private and scan
+    <span class="data">http://127.0.0.1:8000/</span>.
+  </p>
+</div>
+{% endif %}
 
 {% endblock %}

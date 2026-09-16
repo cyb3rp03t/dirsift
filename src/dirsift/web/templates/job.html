@@ -2,16 +2,17 @@
 {% block title %}scanning {{ job.url | defang }}{% endblock %}
 {% block body %}
 
-<h2>Scanning</h2>
-<div class="panel">
-  <p class="lead">{{ job.url | defang }}</p>
-  <div hx-get="/jobs/{{ job.id }}/status" hx-trigger="load" hx-swap="outerHTML"
-       aria-live="polite">
-    <p class="dim flush">starting...</p>
-  </div>
-</div>
+<section class="card card-hero" aria-labelledby="job-title">
+  <p class="quiet" id="job-title" style="margin: 0 0 var(--space-2)">Scanning</p>
+  <p class="display data" style="margin: 0">{{ job.url | defang }}</p>
 
-<p class="dim">
+  <div hx-get="/jobs/{{ job.id }}/status" hx-trigger="load" hx-swap="outerHTML"
+       aria-live="polite" style="margin-block-start: var(--space-5)">
+    <p class="quiet" style="margin: 0">starting</p>
+  </div>
+</section>
+
+<p class="lede">
   This page polls; it does not hold the connection open. Closing it does not stop
   the scan, and the run is written to disk when the walk finishes.
 </p>

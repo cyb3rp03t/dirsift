@@ -1,32 +1,163 @@
-<div>
-  <p class="subhead">{{ entry.name }}</p>
-  <p class="stack-2">
-    <span class="pill">{{ entry.kind }}</span>
-    {% if entry.magic %}<span class="pill">{{ entry.magic }}</span>{% endif %}
-    {% if entry.cluster %}<span class="pill">{{ entry.cluster }}</span>{% endif %}
-  </p>
-  <p class="dim stack-2 fs-sm">
-    {{ entry.fetched_bytes | human_size }} read
-    {% if entry.sha256 %}&middot; sha256 {{ entry.sha256 }}{% endif %}
-    {% if entry.content_type %}&middot; {{ entry.content_type }}{% endif %}
-  </p>
-  {% if entry.references %}
-  <p class="dim stack-2 fs-sm">
-    references:
-    {% for ref in entry.references %}<code>{{ ref }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
-  </p>
+<div class="preview">
+  <div class="preview-head">
+    <p class="quiet" style="margin: 0">Preview</p>
+    <p class="preview-name" style="margin: 0">{{ entry.name }}</p>
+    <ul class="chips">
+      <li class="chip">{{ entry.kind }}</li>
+      <li class="chip">{{ entry.confidence }}</li>
+      {% if entry.magic %}<li class="chip">{{ entry.magic }}</li>{% endif %}
+      {% if entry.cluster %}<li class="chip is-signal">{{ entry.cluster }}</li>{% endif %}
+      {% if entry.truncated %}<li class="chip is-warn">partial read</li>{% endif %}
+    </ul>
+  </div>
+
+  {% if mismatch %}
+  <div class="notice is-warn">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M12 3 2 20h20L12 3z"></path><path d="M12 9v5"></path><path d="M12 18h.01"></path>
+    </svg>
+    <p>{{ mismatch }}</p>
+  </div>
   {% endif %}
-  {% if entry.text_preview %}
-  <p class="warn stack-2 fs-sm">
-    Raw contents, exactly as served. Not defanged: do not paste this into a chat
-    window without looking at it first.
-  </p>
-  <pre class="scroll" tabindex="0" role="region"
-       aria-label="Contents of {{ entry.name }}">{{ entry.text_preview }}</pre>
-  {% else %}
-  <p class="dim flush">
-    Binary, or not read. DirSift keeps text only; pulling the sample is a decision
-    for an isolated VM, not for this page.
-  </p>
-  {% endif %}
+
+  <div class="hash-grid">
+    <div class="hash-row">
+      <span class="name">read</span>
+      <span class="value">
+        {{ entry.fetched_bytes | human_size }}
+        {%- if entry.size and entry.size != entry.fetched_bytes %} of {{ entry.size | human_size }}{% endif %}
+        {%- if entry.truncated %} (partial: cut at the peek ceiling){% endif %}
+      </span>
+      <span></span>
+    </div>
+    {% if entry.sha256 %}
+    <div class="hash-row">
+      <span class="name">sha256</span>
+      <span class="value">{{ entry.sha256 }}</span>
+      <button type="button" class="copy" data-copy="{{ entry.sha256 }}">copy</button>
+    </div>
+    {% endif %}
+    {% if entry.md5 %}
+    <div class="hash-row">
+      <span class="name">md5</span>
+      <span class="value">{{ entry.md5 }}</span>
+      <button type="button" class="copy" data-copy="{{ entry.md5 }}">copy</button>
+    </div>
+    {% endif %}
+    {% if not entry.sha256 and entry.truncated %}
+    <p class="quiet" style="margin: 0">
+      No hash: only the head of this file was read, and half a file hashes to
+      nothing anyone can look up.
+    </p>
+    {% endif %}
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="File views">
+    <button type="button" class="tab" role="tab" id="tab-contents"
+            aria-controls="panel-contents" aria-selected="true">Contents</button>
+    <button type="button" class="tab" role="tab" id="tab-hex"
+            aria-controls="panel-hex" aria-selected="false">Hex</button>
+    <button type="button" class="tab" role="tab" id="tab-links"
+            aria-controls="panel-links" aria-selected="false">Links</button>
+  </div>
+
+  <div class="tab-panel" role="tabpanel" id="panel-contents" aria-labelledby="tab-contents">
+    {% if entry.text_preview %}
+    <div class="button-row" style="margin-block-end: var(--space-3)">
+      <label class="inline" for="find-in-file">find</label>
+      <input id="find-in-file" type="text" data-find="file-source" data-find-count="find-count"
+             placeholder="text in this file" autocomplete="off" spellcheck="false"
+             style="inline-size: 12rem">
+      <span class="quiet" id="find-count" aria-live="polite"></span>
+      <button type="button" class="copy" data-wrap="file-source" aria-pressed="false">wrap</button>
+    </div>
+    <p class="quiet" style="margin-block: 0 var(--space-2)">
+      Raw, exactly as served. Not defanged: read it before pasting it anywhere.
+    </p>
+    <pre class="source" id="file-source" tabindex="0" role="region"
+         aria-label="Contents of {{ entry.name }}">{{ entry.text_preview }}</pre>
+    {% else %}
+    <p class="empty">
+      Binary, or not read. DirSift keeps text only; pulling the sample is a
+      decision for an isolated VM, not for this page. The first bytes are on the
+      hex tab.
+    </p>
+    {% endif %}
+  </div>
+
+  <div class="tab-panel" role="tabpanel" id="panel-hex" aria-labelledby="tab-hex" hidden>
+    {% if hex_rows %}
+    <div class="scroll-region is-mid" tabindex="0" role="region"
+         aria-label="First bytes of {{ entry.name }}">
+      <table class="hexdump">
+        <tbody>
+          {% for row in hex_rows %}
+          <tr>
+            <td class="offset">{{ row.offset }}</td>
+            <td>{{ row.hex }}</td>
+            <td class="ascii">{{ row.ascii }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="scroll-hint">
+      The first {{ hex_rows | length * 16 }} bytes, from the read the scan
+      already made. Nothing was fetched again.
+    </p>
+    {% else %}
+    <p class="empty">Nothing was read from this entry, so there are no bytes to show.</p>
+    {% endif %}
+  </div>
+
+  <div class="tab-panel" role="tabpanel" id="panel-links" aria-labelledby="tab-links" hidden>
+    <h3 class="section-title" style="margin-block-start: 0">
+      Indicators here <span class="count">{{ iocs | length }}</span>
+    </h3>
+    {% if iocs %}
+    <ul class="chips" style="flex-direction: column; align-items: start">
+      {% for ioc in iocs %}
+      <li class="chip">
+        <span class="quiet">{{ ioc.ioc_type }}</span>
+        <span class="data">{{ ioc.defanged }}</span>
+        <button type="button" class="copy" data-copy="{{ ioc.defanged }}">copy</button>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No indicator came out of this file.</p>
+    {% endif %}
+
+    {% if entry.references %}
+    <h3 class="section-title">This file names</h3>
+    <p class="data">{{ entry.references | join(", ") }}</p>
+    {% endif %}
+
+    {% if referenced_by %}
+    <h3 class="section-title">Named by</h3>
+    <p class="button-row">
+      {% for other in referenced_by %}
+      <button type="button" class="link-button" data-file-url="{{ other.url }}"
+              hx-get="/runs/{{ name }}/file?url={{ other.url | urlencode }}"
+              hx-target="#preview" hx-swap="innerHTML">{{ other.name }}</button>
+      {% endfor %}
+    </p>
+    {% endif %}
+
+    {% if siblings %}
+    <h3 class="section-title">Same family</h3>
+    <p class="button-row">
+      {% for other in siblings %}
+      <button type="button" class="link-button" data-file-url="{{ other.url }}"
+              hx-get="/runs/{{ name }}/file?url={{ other.url | urlencode }}"
+              hx-target="#preview" hx-swap="innerHTML">{{ other.name }}</button>
+      {% endfor %}
+    </p>
+    {% endif %}
+
+    {% if not iocs and not entry.references and not referenced_by and not siblings %}
+    <p class="empty">This file stands alone in the run: nothing names it and it names nothing.</p>
+    {% endif %}
+  </div>
 </div>
