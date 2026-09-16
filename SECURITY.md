@@ -12,7 +12,7 @@ tool break its own promises:
 1. **A way to make DirSift request a URL that was not linked from a parsed
    listing.** The tool guesses no paths; anything that gets around that is a
    real bug.
-2. **A way to make DirSift leave its scope** — another host, a scheme downgrade,
+2. **A way to make DirSift leave its scope**: another host, a scheme downgrade,
    a climb above the root, a redirect that escapes the check.
 
 Also worth reporting: anything that sends credentials, anything that writes to a
@@ -30,6 +30,12 @@ One call goes somewhere other than the target: the hash check in
 a file you press the button on, and only when `DIRSIFT_VT_API_KEY` is set. A
 scan never triggers it. Treat any change that makes that call automatic, or that
 widens what it sends, as a bug worth reporting.
+
+Two things are read from disk and never asked of anyone: the address table
+behind `dirsift net` and the ASN column in a report (`src/dirsift/asn.py`), and
+the saved run itself. The table is opened read only, parsed as text, and a
+malformed row is skipped rather than trusted. If a change makes address
+placement reach the network, that is the same class of bug as the two above.
 
 ## Handling what comes back
 
@@ -52,7 +58,8 @@ ones it cannot enforce for you:
 ## Secrets
 
 One key is read, and only from the environment: `DIRSIFT_VT_API_KEY`, for the
-hash check. It is never written into a run file, never printed, and never asked
+hash check. `DIRSIFT_ASN_DB` is read the same way, but it is a file path rather
+than a secret. It is never written into a run file, never printed, and never asked
 for in the interface. Without it the check refuses before a socket is opened.
 
 If you add another integration, read it from the environment the same way, never

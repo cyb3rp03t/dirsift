@@ -21,9 +21,16 @@ To rebuild it after the UI changes:
        npm i playwright
        node docs/record-demo.mjs http://127.0.0.1:8000 http://127.0.0.1:8765/
        ffmpeg -i docs/demo-recording/<recording>.webm -r 5 -s 700x438 frames/f_%04d.png
-       uv run --with pillow python docs/build-demo-gif.py frames docs/demo.gif 11 64
+       uv run --with pillow python docs/build-demo-gif.py frames docs/demo.gif 120 64
 
-The last two numbers trade size against smoothness: 11 milliseconds a frame
-plays back about twice as fast as the session ran, and a 64 colour palette is
-enough for this interface. Keep the result under about five megabytes, which is
-what a README can carry without becoming unpleasant to open.
+The last two numbers trade size against smoothness: 120 milliseconds a frame,
+and a 64 colour palette, which is enough for this interface. Do not lower the
+duration much: identical frames are collapsed into one long frame, so a small
+number makes a page that barely moves look like a still image. A frame is held
+for at most 1200 milliseconds, which is what keeps a quiet moment from reading
+as a freeze. Keep the result under about five megabytes, which is what a README
+can carry without becoming unpleasant to open.
+
+The demo target uses documentation address ranges, so the network column stays
+empty in the recording even on a machine that has the address table. That is
+correct: those ranges are announced by nobody.

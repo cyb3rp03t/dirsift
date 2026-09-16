@@ -151,9 +151,10 @@ a rule, re-run the analysis, leave the target alone.
 ### The console
 
 `dirsift web` serves a local page on `127.0.0.1:8000`. The run page leads with
-the target and the numbers that decide whether to keep going, then the ranked
-entry points, the inventory, the indicators, and the listing beside a preview
-panel, so picking a file never loses the list.
+the target, the address it answered from and the numbers that decide whether to
+keep going, then the ranked entry points, the inventory, the indicators with
+their networks, and the listing beside a preview panel, so picking a file never
+loses the list.
 
 The preview panel is where the reading happens:
 
@@ -162,8 +163,9 @@ The preview panel is where the reading happens:
 - the contents, raw and escaped, with the run's indicators marked in place and
   the lines numbered
 - the first bytes as hex, for anything binary
-- the indicators that came out of this file, the files that name it, and the
-  other versions in its family, with a compare button between two of them
+- the indicators that came out of this file, each with the network it belongs
+  to, the files that name it, and the other versions in its family, with a
+  compare button between two of them
 - a check button that asks a public scanner about the hash, and an open link
   that hands the same hash to your browser instead, which costs no API key
 
@@ -224,7 +226,9 @@ ends up in a command line that every process on the box can read.
 ## What it is not
 
 Not a scanner, not a crawler, not a sandbox, not an enrichment pipeline. It reads
-one directory that is already open and tells you what is in it.
+one directory that is already open and tells you what is in it. The network beside
+an address comes from a file on your own disk, and the hash check only happens on
+the file you press it for: neither one is a feed, and neither one runs by itself.
 
 Pulling a sample and running it is a separate decision that belongs in an
 isolated VM with a snapshot and no route to your host. DirSift never downloads a
@@ -234,7 +238,7 @@ full binary and never executes anything.
 
 ```bash
 uv sync
-uv run pytest          # 120 tests
+uv run pytest          # 142 tests
 uv run ruff check .
 ```
 
