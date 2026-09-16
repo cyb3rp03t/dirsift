@@ -8,7 +8,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from dirsift.models import Entry, Ioc, ScanError, ScanResult
+from dirsift.enrich import MissingKey
+from dirsift.models import Entry, Ioc, ScanError, ScanResult, Verdict
 from dirsift.web import create_app
 
 BACK_TO_DASHBOARD = re.compile(r'<a[^>]*href="/"[^>]*>(?:(?!</a>).)*Back to Dashboard', re.S)
@@ -419,3 +420,90 @@ def test_versions_kept_as_bytes_say_why_they_cannot_be_compared(tmp_path: Path):
     assert page.status_code == 200
     assert "svc2.exe" in page.text
     assert "text" in page.text.lower()
+
+
+# -- asking a public scanner about a hash ----------------------------------
+
+
+def stub_lookup(verdict: Verdict | None = None, calls: list | None = None):
+    def lookup(sha256: str, **kwargs):
+        if calls is not None:
+            calls.append(sha256)
+        if verdict is None:
+            raise MissingKey("no VirusTotal key. Set DIRSIFT_VT_API_KEY in the environment.")
+        return verdict
+    return lookup
+
+
+def test_asking_about_a_hash_records_the_answer(tmp_path: Path):
+    name = run_with_hashes(tmp_path)
+    calls: list[str] = []
+    verdict = Verdict(found=True, malicious=6, total=64, analysed="2026-09-01")
+    client = TestClient(create_app(tmp_path, lookup=stub_lookup(verdict, calls)))
+
+    panel = client.post(
+        f"/runs/{name}/verdict", params={"url": "http://127.0.0.1:8080/run.bat"}
+    )
+
+    assert panel.status_code == 200
+    assert "6/64" in panel.text
+    assert calls == ["a" * 64]
+    assert "6/64" in client.get(f"/runs/{name}").text  # written into the saved run
+
+
+def test_a_file_nobody_has_seen_is_reported_as_such(tmp_path: Path):
+    name = run_with_hashes(tmp_path)
+    client = TestClient(create_app(tmp_path, lookup=stub_lookup(Verdict(found=False))))
+    panel = client.post(
+        f"/runs/{name}/verdict", params={"url": "http://127.0.0.1:8080/run.bat"}
+    )
+    assert "not seen" in panel.text.lower()
+
+
+def test_without_a_key_the_console_says_how_to_set_one(tmp_path: Path):
+    name = run_with_hashes(tmp_path)
+    client = TestClient(create_app(tmp_path, lookup=stub_lookup(None)))
+    panel = client.post(
+        f"/runs/{name}/verdict", params={"url": "http://127.0.0.1:8080/run.bat"}
+    )
+    assert panel.status_code == 200
+    assert "DIRSIFT_VT_API_KEY" in panel.text
+
+
+# -- building a rule from a selection --------------------------------------
+
+
+def test_selected_files_build_a_rule(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    client = TestClient(create_app(tmp_path))
+    panel = client.post(
+        f"/runs/{name}/yara",
+        data={
+            "pick": [
+                "http://127.0.0.1:8080/install.bat",
+                "http://127.0.0.1:8080/svc2.exe",
+            ]
+        },
+    )
+    assert panel.status_code == 200
+    assert "cyb3rp03t" in panel.text  # the panel escapes the quotes around it
+    assert "install.bat" in panel.text
+    assert "svc2.exe" in panel.text
+
+
+def test_a_rule_needs_at_least_one_file(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    panel = TestClient(create_app(tmp_path)).post(f"/runs/{name}/yara", data={})
+    assert panel.status_code == 200
+    assert "pick" in panel.text.lower()
+
+
+def test_a_rule_can_be_downloaded_as_a_file(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    reply = TestClient(create_app(tmp_path)).get(
+        f"/runs/{name}/rule.yar", params={"pick": "http://127.0.0.1:8080/install.bat"}
+    )
+    assert reply.status_code == 200
+    assert "rule dirsift" in reply.text
+    assert 'author = "cyb3rp03t"' in reply.text  # the file itself is not escaped
+    assert "attachment" in reply.headers.get("content-disposition", "")

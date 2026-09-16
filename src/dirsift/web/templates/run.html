@@ -182,18 +182,25 @@
 
 <h2 class="section-title">Listing <span class="count">{{ entries | length }} entries</span></h2>
 <div class="workspace">
-  <div class="card card-tight" data-listing>
+  <form class="card card-tight" data-listing method="post" action="/runs/{{ name }}/yara"
+        hx-post="/runs/{{ name }}/yara" hx-target="#preview" hx-swap="innerHTML">
     <div class="scroll-region is-tall" tabindex="0" role="region" aria-label="Full directory listing">
       <table class="listing">
         <thead>
           <tr>
-            <th>path</th><th>type</th><th class="num">size</th>
+            <th>pick</th><th>path</th><th>type</th><th class="num">size</th>
             <th>sha256</th><th>modified</th><th>family</th>
           </tr>
         </thead>
         <tbody>
           {% for entry in entries %}
           <tr{% if preview and preview.entry.url == entry.url %} class="is-selected"{% endif %}>
+            <td>
+              {%- if not entry.is_dir %}
+              <input type="checkbox" name="pick" value="{{ entry.url }}"
+                     aria-label="Pick {{ entry.name }} for a rule">
+              {%- endif %}
+            </td>
             <td class="data">
               {% if entry.is_dir %}
                 <span class="quiet">{{ entry.name }}/</span>
@@ -202,6 +209,11 @@
                         data-file-url="{{ entry.url }}"
                         hx-get="/runs/{{ name }}/file?url={{ entry.url | urlencode }}"
                         hx-target="#preview" hx-swap="innerHTML">{{ entry.name }}</button>
+                {%- if entry.verdict and entry.verdict.found and entry.verdict.malicious %}
+                <span class="chip is-alert">{{ entry.verdict.malicious }}/{{ entry.verdict.total }}</span>
+                {%- elif entry.verdict and entry.verdict.found %}
+                <span class="chip is-good">{{ entry.verdict.malicious }}/{{ entry.verdict.total }}</span>
+                {%- endif %}
               {% endif %}
             </td>
             <td class="quiet">
@@ -228,14 +240,22 @@
       The table scrolls sideways inside this box. Press j and k to walk the files
       from the keyboard.
     </p>
-  </div>
+    <div class="button-row">
+      <button class="button is-quiet" type="submit">Build a YARA rule</button>
+      <span class="quiet">
+        From the files you pick. Author cyb3rp03t, and the rule says it was built
+        from a bounded read.
+      </span>
+    </div>
+  </form>
 
   <div class="preview-column">
     <div class="card" id="preview" aria-live="polite">
       {% if preview %}
         {% with entry = preview.entry, mismatch = preview.mismatch, iocs = preview.iocs,
                 referenced_by = preview.referenced_by, siblings = preview.siblings,
-                hex_rows = preview.hex_rows, source_html = preview.source_html %}
+                hex_rows = preview.hex_rows, source_html = preview.source_html,
+                verdict_ready = preview.verdict_ready, note = preview.note %}
           {% include "_file.html" %}
         {% endwith %}
       {% else %}

@@ -45,6 +45,36 @@
       <button type="button" class="copy" data-copy="{{ entry.md5 }}">copy</button>
     </div>
     {% endif %}
+    <div class="hash-row">
+      <span class="name">verdict</span>
+      <span class="value">
+        {% if entry.verdict %}
+          {% if entry.verdict.found %}
+          <span class="chip {% if entry.verdict.malicious %}is-alert{% else %}is-good{% endif %}">
+            {{ entry.verdict.malicious }}/{{ entry.verdict.total }} engines
+          </span>
+          {% if entry.verdict.analysed %}<span class="quiet">last analysed {{ entry.verdict.analysed }}</span>{% endif %}
+          {% else %}
+          <span class="chip is-warn">not seen by the scanner</span>
+          {% endif %}
+        {% else %}
+          <span class="quiet">not asked</span>
+        {% endif %}
+      </span>
+      {% if entry.sha256 %}
+      <button type="button" class="copy"
+              hx-post="/runs/{{ name }}/verdict?url={{ entry.url | urlencode }}"
+              hx-target="#preview" hx-swap="innerHTML">check</button>
+      {% endif %}
+    </div>
+    {% if note %}
+    <p class="quiet" style="margin: 0">{{ note }}</p>
+    {% endif %}
+    <p class="quiet" style="margin: 0">
+      Checking sends this hash to VirusTotal and nothing else. The file is never
+      uploaded, and nothing is sent until you press the button.
+      {%- if not verdict_ready %} No key is set, so the button will explain how.{% endif %}
+    </p>
     {% if not entry.sha256 and entry.truncated %}
     <p class="quiet" style="margin: 0">
       No hash: only the head of this file was read, and half a file hashes to

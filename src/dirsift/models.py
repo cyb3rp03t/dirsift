@@ -78,6 +78,9 @@ class Entry(BaseModel):
     # Set by the cluster stage: the label of the version family this belongs to.
     cluster: str | None = None
 
+    # Set only when someone asks a public scanner about the hash, from the console.
+    verdict: Verdict | None = None
+
     # Set by the glue stage: how strongly this file drives the other files here.
     glue_score: float = 0.0
     references: list[str] = Field(default_factory=list)
@@ -100,6 +103,20 @@ class Ioc(BaseModel):
 
     def key(self) -> tuple[str, str]:
         return (self.ioc_type, self.value.lower())
+
+
+class Verdict(BaseModel):
+    """What a public scanner says about one digest, and when it was asked.
+
+    Kept on the entry so a run carries its own answers: the same file is never
+    asked about twice, and a saved run can be reread without going out again.
+    """
+
+    found: bool
+    malicious: int = 0
+    total: int = 0
+    analysed: str | None = None  # the date of the scanner's own last analysis
+    checked_at: datetime = Field(default_factory=_utcnow)
 
 
 class Cluster(BaseModel):

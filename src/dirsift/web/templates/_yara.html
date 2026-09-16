@@ -1,0 +1,34 @@
+<div class="preview">
+  <div class="preview-head">
+    <p class="quiet" style="margin: 0">Rule</p>
+    <p class="preview-name" style="margin: 0">
+      {% if picked %}{{ picked | length }} file{{ "" if picked | length == 1 else "s" }} selected{% else %}Nothing selected{% endif %}
+    </p>
+    {% if picked %}
+    <ul class="chips">
+      {% for entry in picked %}<li class="chip">{{ entry.name }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+
+  {% if not picked %}
+  <div class="notice is-warn">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path>
+    </svg>
+    <p>Pick at least one file in the listing, then build the rule again.</p>
+  </div>
+  {% else %}
+  <div class="button-row">
+    <button type="button" class="copy" data-copy="{{ rule }}">copy the rule</button>
+    <a class="link-button" href="/runs/{{ name }}/rule.yar?{{ query }}">download rule.yar</a>
+  </div>
+  <p class="quiet" style="margin: 0">
+    Two rules: one that identifies the files read whole by digest, and one built
+    from the head bytes and strings, which is the one that may catch the next
+    build and the one to test before trusting.
+  </p>
+  <pre class="source" tabindex="0" role="region" aria-label="Generated YARA rule">{{ rule }}</pre>
+  {% endif %}
+</div>

@@ -21,8 +21,9 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlencode
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -30,10 +31,12 @@ from markupsafe import Markup, escape
 
 from ..analyze import analyze
 from ..classify import mismatch
+from ..enrich import MissingKey, api_key_from_env, lookup_hash
 from ..extract import defang
 from ..fetcher import PrivateTargetError, ScopeError
 from ..models import Entry, Ioc, ScanResult
 from ..report import human_size, render_markdown
+from ..rules import build_rules
 from ..walker import ScanOptions, scan
 
 HERE = Path(__file__).parent
@@ -86,6 +89,10 @@ def _failure_message(exc: Exception) -> str:
         )
     return f"{type(exc).__name__}: {exc}"
 
+
+#: Selected files arrive as a repeated field, from the form and from the link.
+PICKED_IN_FORM = Form(default=[])
+PICKED_IN_QUERY = Query(default=[])
 
 #: Bytes per row in the hex view.
 HEX_COLUMNS = 16
@@ -161,7 +168,9 @@ def _diff_rows(left: Entry, right: Entry) -> list[dict[str, str]]:
     return rows
 
 
-def _preview(result: ScanResult, entry: Entry, name: str) -> dict[str, object]:
+def _preview(
+    result: ScanResult, entry: Entry, name: str, note: str | None = None
+) -> dict[str, object]:
     """Everything the preview panel knows about one file, gathered in one place."""
     return {
         "name": name,
@@ -181,10 +190,12 @@ def _preview(result: ScanResult, entry: Entry, name: str) -> dict[str, object]:
         ],
         "hex_rows": _hex_rows(entry.head_hex),
         "source_html": _source_html(entry.text_preview, result.iocs),
+        "verdict_ready": api_key_from_env() is not None,
+        "note": note,
     }
 
 
-def create_app(runs_dir: Path = Path("runs")) -> FastAPI:
+def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     runs_dir = Path(runs_dir)
     runs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -338,6 +349,63 @@ def create_app(runs_dir: Path = Path("runs")) -> FastAPI:
         if entry is None:
             return HTMLResponse("<p>not in this run</p>", status_code=404)
         return templates.TemplateResponse(request, "_file.html", _preview(result, entry, name))
+
+    @app.post("/runs/{name}/verdict", response_class=HTMLResponse)
+    def file_verdict(request: Request, name: str, url: str):
+        """Ask a public scanner about one hash, on purpose, one file at a time."""
+        result, _ = load_run(name)
+        entry = next((e for e in result.entries if e.url == url), None)
+        if entry is None:
+            return HTMLResponse("<p>not in this run</p>", status_code=404)
+
+        note = None
+        if not entry.sha256:
+            note = "This file has no hash to ask about: only its head was read."
+        else:
+            try:
+                entry.verdict = lookup(entry.sha256, api_key=api_key_from_env())
+            except MissingKey as exc:
+                note = str(exc)
+            except Exception as exc:  # noqa: BLE001 - surfaced in the panel
+                note = f"The lookup failed: {type(exc).__name__}: {exc}"
+            else:
+                (runs_dir / f"{name}.json").write_text(
+                    result.model_dump_json(indent=2), encoding="utf-8"
+                )
+
+        return templates.TemplateResponse(
+            request, "_file.html", _preview(result, entry, name, note)
+        )
+
+    def _picked(result: ScanResult, urls: list[str]) -> list[Entry]:
+        wanted = set(urls)
+        return [entry for entry in result.entries if entry.url in wanted and not entry.is_dir]
+
+    @app.post("/runs/{name}/yara", response_class=HTMLResponse)
+    def build_yara(request: Request, name: str, pick: list[str] = PICKED_IN_FORM):
+        """A rule from the files someone ticked in the listing."""
+        result, _ = load_run(name)
+        picked = _picked(result, pick)
+        return templates.TemplateResponse(
+            request,
+            "_yara.html",
+            {
+                "name": name,
+                "picked": picked,
+                "rule": build_rules(result, picked, name) if picked else "",
+                "query": urlencode([("pick", entry.url) for entry in picked]),
+            },
+        )
+
+    @app.get("/runs/{name}/rule.yar", response_class=PlainTextResponse)
+    def download_yara(name: str, pick: list[str] = PICKED_IN_QUERY):
+        result, _ = load_run(name)
+        picked = _picked(result, pick)
+        rule = build_rules(result, picked, name) if picked else "// nothing was selected"
+        return PlainTextResponse(
+            rule,
+            headers={"Content-Disposition": 'attachment; filename="' + name + '.yar"'},
+        )
 
     @app.get("/runs/{name}/diff", response_class=HTMLResponse)
     def file_diff(request: Request, name: str, a: str, b: str):
