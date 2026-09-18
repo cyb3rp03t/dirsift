@@ -7,7 +7,9 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
+import httpx
 import typer
+from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
@@ -50,6 +52,17 @@ app = typer.Typer(
 )
 console = Console()
 err = Console(stderr=True)
+
+
+def _write(path: Path, text: str, label: str) -> None:
+    """Write a result, making the folder it was told to write into."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        err.print(f"[red]could not write[/] {path}: {exc.strerror}")
+        raise typer.Exit(code=2) from None
+    console.print(f"[green]{label}[/] {path}")
 
 
 def _summary(result: ScanResult, candidates) -> None:
@@ -181,13 +194,14 @@ def scan_cmd(
         err.print()
     _summary(result, candidates)
 
+    # The walk has already been paid for in requests to somebody else's server.
+    # Losing it because a folder further down the path does not exist yet would
+    # be the worst trade in the tool, so the folder is made.
     if save_json:
-        save_json.write_text(result.model_dump_json(indent=2), encoding="utf-8")
-        console.print(f"[green]run saved[/] {save_json}")
+        _write(save_json, result.model_dump_json(indent=2), "run saved")
 
     if out:
-        out.write_text(render_markdown(result, candidates), encoding="utf-8")
-        console.print(f"[green]report written[/] {out}")
+        _write(out, render_markdown(result, candidates), "report written")
 
 
 @app.command("report")
@@ -202,12 +216,10 @@ def report_cmd(
 ) -> None:
     """Re-render a saved run. Touches nothing on the network."""
     banner(f"report | {run.name}")
-    result = ScanResult.model_validate(json.loads(run.read_text(encoding="utf-8")))
-    result, candidates = analyze(result)
+    result, candidates = _load(run)
     markdown = render_markdown(result, candidates, scaffold=scaffold)
     if out:
-        out.write_text(markdown, encoding="utf-8")
-        console.print(f"[green]report written[/] {out}")
+        _write(out, markdown, "report written")
     else:
         sys.stdout.write(markdown)
 
@@ -223,8 +235,7 @@ def iocs_cmd(
     ] = False,
 ) -> None:
     """Print just the indicators, one per line, for piping."""
-    result = ScanResult.model_validate(json.loads(run.read_text(encoding="utf-8")))
-    result, _ = analyze(result)
+    result, _ = _load(run)
     for ioc in result.iocs:
         if ioc_type and ioc.ioc_type != ioc_type:
             continue
@@ -235,11 +246,33 @@ def iocs_cmd(
 HASH_CHARS = set("0123456789abcdef")
 
 
-def _load(run: Path) -> ScanResult:
-    """A saved run, re-analysed. Nothing here touches the network."""
-    result = ScanResult.model_validate(json.loads(run.read_text(encoding="utf-8")))
-    result, _ = analyze(result)
-    return result
+def _load(run: Path) -> tuple[ScanResult, list]:
+    """A saved run, re-analysed, with its entry point candidates.
+
+    Nothing here touches the network.
+
+    The path is the thing a person gets wrong first, usually by pointing at a
+    run that was never written. A stack trace answers none of that, so the
+    two ways this fails are caught and said in a sentence.
+    """
+    try:
+        text = run.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        console.print(f"[bold]No run at[/bold] {run}")
+        console.print("[dim]A run is written by scan with --json. Check the path.[/dim]")
+        raise typer.Exit(code=2) from None
+    except OSError as exc:
+        console.print(f"[bold]Cannot read[/bold] {run}: {exc.strerror}")
+        raise typer.Exit(code=2) from None
+
+    try:
+        result = ScanResult.model_validate(json.loads(text))
+    except (json.JSONDecodeError, ValidationError) as exc:
+        console.print(f"[bold]{run} is not a run DirSift wrote.[/bold]")
+        console.print(f"[dim]{type(exc).__name__}: {str(exc).splitlines()[0]}[/dim]")
+        raise typer.Exit(code=2) from None
+
+    return analyze(result)
 
 
 @app.command("hashes")
@@ -247,7 +280,7 @@ def hashes_cmd(
     run: Annotated[Path, typer.Argument(help="A run saved with --json.")],
 ) -> None:
     """Print sha256, md5 and path for the files that were read whole."""
-    result = _load(run)
+    result, _ = _load(run)
     for entry in result.files:
         if not entry.sha256:
             continue
@@ -269,13 +302,12 @@ def rules_cmd(
     ] = None,
 ) -> None:
     """Write YARA rules from a saved run, keyed to the indicators each file carried."""
-    result = _load(run)
+    result, _ = _load(run)
     wanted = set(names or [])
     picked = [entry for entry in result.files if not wanted or entry.name in wanted]
     rules = build_rules(result, picked, run.stem)
     if out:
-        out.write_text(rules, encoding="utf-8")
-        console.print(f"[dim]{len(picked)} file(s) ->[/dim] {out}")
+        _write(out, rules, f"{len(picked)} file(s) ->")
         return
     sys.stdout.write(rules)
 
@@ -294,6 +326,31 @@ def check_cmd(
     except MissingKey as exc:
         console.print(str(exc))
         raise typer.Exit(code=2) from exc
+    except httpx.HTTPStatusError as exc:
+        # The scanner's own status codes say which of these it is, and the
+        # answer is different work each time: fix the key, wait, or look again
+        # later. A raw HTTPStatusError says none of that.
+        status = exc.response.status_code
+        if status == 401:
+            console.print("[bold]The scanner rejected the key.[/bold]")
+            console.print(
+                "[dim]Check DIRSIFT_VT_API_KEY. A hash pasted in place of the key "
+                "looks exactly like this.[/dim]"
+            )
+            raise typer.Exit(code=2) from None
+        if status == 403:
+            console.print("[bold]That key is not allowed to ask this.[/bold]")
+            console.print("[dim]A free key cannot reach every endpoint.[/dim]")
+            raise typer.Exit(code=2) from None
+        if status == 429:
+            console.print("[bold]Over the quota.[/bold]")
+            console.print(
+                "[dim]A free key allows about four lookups a minute and 500 a day. "
+                "Wait and ask again.[/dim]"
+            )
+            raise typer.Exit(code=1) from None
+        console.print(f"The scanner answered {status}.")
+        raise typer.Exit(code=1) from None
     except Exception as exc:  # noqa: BLE001 - the reason belongs on the terminal
         console.print(f"The lookup failed: {type(exc).__name__}: {exc}")
         raise typer.Exit(code=1) from exc

@@ -155,3 +155,71 @@ def test_net_is_honest_when_the_table_has_no_answer(tmp_path: Path):
     reply = runner.invoke(cli.app, ["net", "10.0.0.1", "--db", str(table)])
     assert reply.exit_code != 0
     assert "ip2asn.tsv" in reply.stdout  # which table was asked, not just "no"
+
+
+# -- what happens when the paths are wrong ---------------------------------
+
+
+def test_a_missing_run_is_a_sentence_not_a_traceback(tmp_path: Path):
+    """The file is the first thing a person gets wrong; it deserves an answer."""
+    absent = tmp_path / "runs" / "nope.json"
+    for command in ("report", "iocs", "hashes", "rules"):
+        reply = runner.invoke(cli.app, [command, str(absent)])
+        assert reply.exit_code == 2, command
+        assert "nope.json" in reply.stdout
+        assert "Traceback" not in reply.stdout
+
+
+def test_a_run_that_is_not_json_says_so(tmp_path: Path):
+    broken = tmp_path / "broken.json"
+    broken.write_text("<html>404</html>", encoding="utf-8")
+    reply = runner.invoke(cli.app, ["hashes", str(broken)])
+    assert reply.exit_code == 2
+    assert "broken.json" in reply.stdout
+
+
+def test_saving_into_a_directory_that_is_not_there_yet_works(tmp_path: Path, monkeypatch):
+    """A scan costs requests; losing it to a missing folder would be absurd."""
+    from dirsift.models import ScanResult
+
+    monkeypatch.setattr(cli, "scan", lambda url, options: ScanResult(root_url=url))
+    target = tmp_path / "not" / "yet" / "run.json"
+    report = tmp_path / "also" / "missing" / "triage.md"
+    reply = runner.invoke(
+        cli.app,
+        ["scan", "http://127.0.0.1:8099/", "--allow-private", "--json", str(target),
+         "-o", str(report), "--quiet"],
+    )
+    assert reply.exit_code == 0, reply.stdout
+    assert target.exists()
+    assert report.exists()
+
+
+def test_a_rejected_key_says_which_key_to_look_at(monkeypatch):
+    """VirusTotal answers 401 for a key that is absent, wrong or pasted wrong."""
+    import httpx
+
+    def lookup(digest: str, **kwargs):
+        request = httpx.Request("GET", "https://www.virustotal.com/api/v3/files/" + digest)
+        response = httpx.Response(401, request=request)
+        raise httpx.HTTPStatusError("401", request=request, response=response)
+
+    monkeypatch.setattr(cli, "lookup_hash", lookup)
+    reply = runner.invoke(cli.app, ["check", "e" * 64])
+    assert reply.exit_code == 2
+    assert "DIRSIFT_VT_API_KEY" in reply.stdout
+    assert "HTTPStatusError" not in reply.stdout  # a class name is not an answer
+
+
+def test_being_over_the_rate_limit_is_not_reported_as_a_broken_key(monkeypatch):
+    import httpx
+
+    def lookup(digest: str, **kwargs):
+        request = httpx.Request("GET", "https://www.virustotal.com/api/v3/files/" + digest)
+        response = httpx.Response(429, request=request)
+        raise httpx.HTTPStatusError("429", request=request, response=response)
+
+    monkeypatch.setattr(cli, "lookup_hash", lookup)
+    reply = runner.invoke(cli.app, ["check", "f" * 64])
+    assert reply.exit_code == 1
+    assert "quota" in reply.stdout.lower() or "minute" in reply.stdout.lower()
