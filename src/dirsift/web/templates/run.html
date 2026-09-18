@@ -299,10 +299,22 @@
       <thead><tr><th>stage</th><th>url</th><th>detail</th></tr></thead>
       <tbody>
         {% for error in result.errors %}
+        {% set meaning = error.detail | explain %}
         <tr>
           <td class="quiet">{{ error.stage }}</td>
           <td class="data">{{ error.url | defang }}</td>
-          <td>{{ error.detail }}</td>
+          <td>
+            {{ error.detail }}
+            {% if meaning %}
+            <details class="why">
+              <summary aria-label="What this note means">
+                <span aria-hidden="true">i</span>
+                <span class="why-label">what this means</span>
+              </summary>
+              <p>{{ meaning }}</p>
+            </details>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

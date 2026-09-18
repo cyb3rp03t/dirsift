@@ -32,6 +32,7 @@ from markupsafe import Markup, escape
 from ..analyze import analyze
 from ..asn import default_table
 from ..classify import mismatch
+from ..diagnose import explain
 from ..enrich import MissingKey, api_key_from_env, lookup_hash
 from ..extract import defang
 from ..fetcher import PrivateTargetError, ScopeError
@@ -209,6 +210,7 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     templates.env.filters["human_size"] = human_size
     templates.env.filters["defang"] = defang
+    templates.env.filters["explain"] = explain
     jobs = JobStore()
 
     # The address table is half a million ranges and takes a few seconds to

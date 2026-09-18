@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from .classify import INTERESTING_NAMES, mismatch
+from .diagnose import explain
 from .extract import defang
 from .glue import GlueCandidate
 from .models import Entry, Kind, ScanResult
@@ -268,6 +269,9 @@ def render_markdown(
         for error in result.errors[:30]:
             add(f"- `{_rel(Entry(url=error.url, name=''), root) or error.url}` "
                 f"({error.stage}): {error.detail}")
+            meaning = explain(error.detail)
+            if meaning:
+                add(f"  _{meaning}_")
         add("")
 
     # -- writeup scaffold --------------------------------------------------

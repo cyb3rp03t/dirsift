@@ -223,3 +223,23 @@ def test_being_over_the_rate_limit_is_not_reported_as_a_broken_key(monkeypatch):
     reply = runner.invoke(cli.app, ["check", "f" * 64])
     assert reply.exit_code == 1
     assert "quota" in reply.stdout.lower() or "minute" in reply.stdout.lower()
+
+
+def test_the_terminal_says_what_a_note_means(tmp_path: Path, monkeypatch):
+    """The person watching a scan fail should not have to open the report."""
+    from dirsift.models import ScanError, ScanResult
+
+    def fake_scan(url, options):
+        return ScanResult(
+            root_url=url,
+            errors=[
+                ScanError(url=url, stage="walk", detail="HTTP 503 Service Unavailable"),
+                ScanError(url=url, stage="walk", detail="nothing written for this one"),
+            ],
+        )
+
+    monkeypatch.setattr(cli, "scan", fake_scan)
+    reply = runner.invoke(cli.app, ["scan", "http://203.0.113.24/", "--quiet"])
+    assert reply.exit_code == 0
+    assert "HTTP 503" in reply.stdout
+    assert "already waited and retried" in reply.stdout

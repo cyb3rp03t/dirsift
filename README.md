@@ -53,6 +53,11 @@ It does not decide anything for you. It collects.
   keyed to the indicators that file carried rather than to its digest. The hash
   stays in meta as identity: a hash matches one build, the address inside it
   usually survives the next one.
+- **Says what went wrong, in words.** A run's notes carry the status the server
+  gave and a sentence about what it usually means: whether the branch was
+  dropped on purpose, whether to slow down, and whether the answer came from
+  the target at all. Antivirus software answers some requests itself, and a run
+  that never left your machine should say so rather than blaming the host.
 - **Places the addresses, offline.** Every IP it found, and the address the
   target itself resolved to, gets an AS number, the network's name and a
   country, read from a table on your disk. No lookup service is asked, because
@@ -168,6 +173,10 @@ The preview panel is where the reading happens:
   compare button between two of them
 - a check button that asks a public scanner about the hash, and an open link
   that hands the same hash to your browser instead, which costs no API key
+
+Every note at the bottom of a run carries a small `i`. Open it and the status
+code is written out: what it means, who probably produced it, and what is worth
+changing before going back.
 
 Tick files in the listing to build a YARA rule from them. `j` and `k` walk the
 listing from the keyboard, and the file you opened stays in the address bar, so

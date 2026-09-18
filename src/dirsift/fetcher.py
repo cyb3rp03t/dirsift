@@ -139,6 +139,10 @@ class Response:
     body: bytes
     truncated: bool
     elapsed: float
+    #: The words after the status code. A middlebox that answers instead of the
+    #: target usually says so here, and that is the difference between "the
+    #: server refused" and "your own machine refused on its behalf".
+    reason: str = ""
 
     @property
     def text(self) -> str:
@@ -289,6 +293,7 @@ class PoliteFetcher:
                     return Response(
                         url=str(stream.url),
                         status=stream.status_code,
+                        reason=stream.reason_phrase or "",
                         headers={k.lower(): v for k, v in stream.headers.items()},
                         body=body,
                         truncated=truncated,

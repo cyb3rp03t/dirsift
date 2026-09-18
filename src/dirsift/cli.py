@@ -16,6 +16,7 @@ from rich.table import Table
 from .analyze import analyze
 from .asn import ENV_PATH, AsnTable, default_table
 from .banner import banner
+from .diagnose import explain
 from .enrich import MissingKey, api_key_from_env, lookup_hash
 from .extract import defang
 from .fetcher import ScopeError
@@ -114,6 +115,22 @@ def _summary(result: ScanResult, candidates) -> None:
             console.print(f"  [magenta]{ioc.ioc_type:<9}[/] {ioc.defanged}{label}{where}")
         if len(result.iocs) > 12:
             console.print(f"  [dim]+{len(result.iocs) - 12} more, see the report[/]")
+        console.print()
+
+    # A status code on its own sends people to a search engine. The first few
+    # notes carry their meaning here, so a scan that came back with nothing can
+    # be understood without opening the report.
+    said: set[str] = set()
+    for error in result.errors:
+        meaning = explain(error.detail)
+        if not meaning or meaning in said:
+            continue
+        said.add(meaning)
+        console.print(f"[yellow]{error.stage}[/] {error.detail}")
+        console.print(f"  [dim]{meaning}[/]")
+        if len(said) == 3:
+            break
+    if said:
         console.print()
 
     console.print(

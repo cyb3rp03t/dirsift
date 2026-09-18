@@ -613,3 +613,53 @@ def test_the_page_says_which_table_answered(tmp_path: Path):
     page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
     assert "ip2asn-combined.tsv" in page
     assert "2026-09-16" in page
+
+
+# -- saying what a note means ----------------------------------------------
+
+
+def run_with_errors(runs_dir: Path) -> str:
+    return save_run(
+        runs_dir,
+        ScanResult(
+            root_url="http://203.0.113.24/files/",
+            errors=[
+                ScanError(
+                    url="http://203.0.113.24/files/",
+                    stage="walk",
+                    detail="HTTP 503 Service Temporarily Unavailable",
+                ),
+                ScanError(
+                    url="http://203.0.113.24/files/x.bin",
+                    stage="peek",
+                    detail="HTTP 499 Request has been forbidden by antivirus",
+                ),
+                ScanError(
+                    url="http://203.0.113.24/files/y.bin",
+                    stage="peek",
+                    detail="a detail nobody has written a sentence for",
+                ),
+            ],
+        ),
+    )
+
+
+def test_a_note_carries_an_explanation_you_can_open(tmp_path: Path):
+    name = run_with_errors(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    assert "<details" in page
+    assert "what this means" in page.lower()
+    assert "already waited and retried" in page
+
+
+def test_an_antivirus_note_says_the_request_never_arrived(tmp_path: Path):
+    name = run_with_errors(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    assert "antivirus answered this request itself" in page
+
+
+def test_a_note_with_nothing_to_say_gets_no_marker(tmp_path: Path):
+    """Three notes, two explanations: the unknown one is left alone."""
+    name = run_with_errors(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    assert page.count("what this means") == 2

@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .classify import classify, is_textual
-from .fetcher import AuthWall, PoliteFetcher, Scope, ScopeError, normalize_url
+from .fetcher import AuthWall, PoliteFetcher, Response, Scope, ScopeError, normalize_url
 from .listing import looks_like_listing, parse_listing
 from .models import Entry, ScanError, ScanResult
 
@@ -51,6 +51,18 @@ class ScanOptions:
         return {
             k: v for k, v in self.__dict__.items() if k != "progress"
         }
+
+
+def _status_note(response: Response) -> str:
+    """The note a refused request leaves behind.
+
+    The reason line is kept because it is often the only thing that says who
+    answered. A target says "Service Temporarily Unavailable"; the antivirus on
+    the machine running the scan says "Request has been forbidden by antivirus",
+    and the two deserve different reactions.
+    """
+    reason = (response.reason or "").strip()
+    return f"HTTP {response.status} {reason}".strip()
 
 
 def _resolve(host: str | None) -> str | None:
@@ -125,7 +137,7 @@ def scan(root_url: str, options: ScanOptions | None = None) -> ScanResult:
 
             if response.status >= 400:
                 result.errors.append(
-                    ScanError(url=url, stage="walk", detail=f"HTTP {response.status}")
+                    ScanError(url=url, stage="walk", detail=_status_note(response))
                 )
                 continue
 
@@ -201,7 +213,7 @@ def scan(root_url: str, options: ScanOptions | None = None) -> ScanResult:
 
             if response.status >= 400:
                 result.errors.append(
-                    ScanError(url=entry.url, stage="peek", detail=f"HTTP {response.status}")
+                    ScanError(url=entry.url, stage="peek", detail=_status_note(response))
                 )
                 continue
 
