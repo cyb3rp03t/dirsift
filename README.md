@@ -25,6 +25,21 @@ It does not decide anything for you. It collects.
 
 ![A scan, the triage page it produces, a file read with its indicators marked, and two files turned into a rule](docs/demo.gif)
 
+## Where it earns its keep: C2 servers
+
+DirSift does its best work on attacker infrastructure: command-and-control
+servers and the staging hosts beside them. Those boxes are stood up in a hurry
+and left listing, and an open index on one usually holds the whole kit at once:
+the loader, a run of builds, the config, and the script that ties them together.
+
+That is the shape every part of DirSift is built for. The build run collapses
+into one family with its gaps showing, the script that launches the rest is
+ranked first, the callback addresses and domains come out of the files with the
+line they sat on, each address is placed on its hosting network, and the files
+you tick become YARA rules keyed to what they carried. One pass over a live C2
+directory gives you the infrastructure to pivot on and the rules to hunt the
+next build with, without ever running a sample.
+
 ## What it does
 
 - **Walks the index.** Apache, nginx, IIS, Python `http.server`, Caddy, lighttpd,
