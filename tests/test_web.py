@@ -663,3 +663,30 @@ def test_a_note_with_nothing_to_say_gets_no_marker(tmp_path: Path):
     name = run_with_errors(tmp_path)
     page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
     assert page.count("what this means") == 2
+
+
+# -- an indicator shared between files ----
+
+
+def test_the_preview_lists_an_indicator_the_file_shares_with_another(tmp_path: Path):
+    def build(name: str, verb: str) -> Entry:
+        return Entry(
+            url="http://203.0.113.24/files/" + name,
+            name=name,
+            depth=1,
+            kind="script",
+            fetched_bytes=60,
+            text_preview=verb + " http://panel-gate.xyz/gate.php",
+        )
+
+    name = save_run(
+        tmp_path,
+        ScanResult(
+            root_url="http://203.0.113.24/files/",
+            entries=[build("a.bat", "curl"), build("b.bat", "wget")],
+        ),
+    )
+    client = TestClient(create_app(tmp_path))
+    page = preview_of(client, name, "http://203.0.113.24/files/b.bat")
+    assert "panel-gate[.]xyz" in page
+

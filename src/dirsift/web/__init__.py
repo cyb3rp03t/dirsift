@@ -182,7 +182,7 @@ def _preview(
         "name": name,
         "entry": entry,
         "mismatch": mismatch(entry),
-        "iocs": [ioc for ioc in result.iocs if ioc.source_url == entry.url],
+        "iocs": [ioc for ioc in result.iocs if ioc.found_in(entry.url)],
         "referenced_by": [
             other
             for other in result.files

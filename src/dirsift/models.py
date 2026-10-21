@@ -98,6 +98,9 @@ class Ioc(BaseModel):
     value: str
     defanged: str
     source_url: str
+    # Every file that carried it, the first one included. ``source_url`` and the
+    # context stay with the first; this is what a per-file view filters on.
+    sources: list[str] = Field(default_factory=list)
     context: str | None = None
     label: str | None = None  # e.g. "aws_access_key", "telegram_bot_token"
 
@@ -108,6 +111,10 @@ class Ioc(BaseModel):
 
     def key(self) -> tuple[str, str]:
         return (self.ioc_type, self.value.lower())
+
+    def found_in(self, url: str) -> bool:
+        """Whether this file carried the indicator, not only whether it was first."""
+        return url == self.source_url or url in self.sources
 
 
 class Verdict(BaseModel):

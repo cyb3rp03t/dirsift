@@ -174,3 +174,33 @@ def test_context_travels_defanged():
 
 def test_defang_text_leaves_prose_alone():
     assert defang_text("nothing here") == "nothing here"
+
+
+# -- indicators seen in more than one file ---------------------------------
+
+
+def test_a_deduplicated_indicator_remembers_every_file_it_came_from():
+    from dirsift.analyze import analyze
+    from dirsift.asn import AsnTable
+    from dirsift.models import ScanResult
+
+    files = [
+        entry("a.bat", text_preview="curl http://panel-gate.xyz/gate.php"),
+        entry("b.bat", text_preview="wget http://panel-gate.xyz/gate.php"),
+    ]
+    result, _ = analyze(
+        ScanResult(root_url="http://example.test/files/", entries=files), asn_table=AsnTable()
+    )
+    url = next(ioc for ioc in result.iocs if ioc.ioc_type == "url")
+    assert url.source_url == files[0].url
+    assert url.sources == [files[0].url, files[1].url]
+    assert url.found_in(files[1].url)
+
+
+def test_a_webhook_secret_is_defanged_like_any_other_link():
+    found = extract_iocs(
+        "hook = https://discord.com/api/webhooks/123456/abcdefABCDEF", "http://x.test/a"
+    )
+    webhook = next(ioc for ioc in found if ioc.label == "discord_webhook")
+    assert webhook.defanged.startswith("hxxps://")
+    assert "discord[.]com" in webhook.defanged

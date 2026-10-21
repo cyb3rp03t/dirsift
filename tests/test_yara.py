@@ -190,3 +190,27 @@ def test_the_rule_uses_the_form_the_file_actually_contains():
     rules = build_rules(result_with(note, iocs=[indicator]), [note], run_name="run")
     assert '"hxxp://panel[.]example[.]net/admin" ascii' in rules
     assert '"http://panel.example.net/admin" ascii' not in rules
+
+
+# -- an indicator two files carry ------------------------------------------
+
+
+def test_an_indicator_shared_by_two_builds_goes_into_both_rules():
+    """The second build carries the callback too, so its rule must match on it."""
+    from dirsift.analyze import analyze
+    from dirsift.asn import AsnTable
+
+    def build(name: str, verb: str) -> Entry:
+        return Entry(
+            url=TARGET + name,
+            name=name,
+            depth=1,
+            kind="script",
+            fetched_bytes=60,
+            text_preview=verb + " http://panel-gate.xyz/gate.php\n",
+        )
+
+    result = ScanResult(root_url=TARGET, entries=[build("a.bat", "curl"), build("b.bat", "wget")])
+    result, _ = analyze(result, asn_table=AsnTable())
+    rules = build_rules(result, [result.entries[1]], "run")
+    assert '"http://panel-gate.xyz/gate.php" ascii' in rules

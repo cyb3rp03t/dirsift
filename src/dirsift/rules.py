@@ -117,7 +117,7 @@ def _iocs_of(entry: Entry, iocs: list[Ioc]) -> list[Ioc]:
     seen: set[str] = set()
     picked: list[Ioc] = []
     for ioc in sorted(iocs, key=lambda item: len(item.value), reverse=True):
-        if ioc.source_url != entry.url or ioc.ioc_type not in IOC_PREFIX:
+        if not ioc.found_in(entry.url) or ioc.ioc_type not in IOC_PREFIX:
             continue
         if len(ioc.value) < MIN_IOC or ioc.value in seen:
             continue

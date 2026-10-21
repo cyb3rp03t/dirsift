@@ -150,6 +150,10 @@ _NOISE_SECRET_VALUES = {
 }
 
 
+def _is_link(value: str) -> bool:
+    return value.lower().startswith(("http://", "https://", "ftp://"))
+
+
 def _is_interesting_ip(raw: str) -> bool:
     try:
         ip = ipaddress.ip_address(raw)
@@ -187,10 +191,12 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
         ioc = Ioc(
             ioc_type=ioc_type,
             value=value,
-            # Only network indicators are clickable, so only those need
-            # neutering. Defanging a file path just makes it wrong.
-            defanged=defang(value) if ioc_type in NETWORK_TYPES else value,
+            # Only what is clickable needs neutering: the network indicators,
+            # and a secret that is itself a link, such as a webhook. Defanging
+            # a file path just makes it wrong.
+            defanged=defang(value) if ioc_type in NETWORK_TYPES or _is_link(value) else value,
             source_url=source_url,
+            sources=[source_url],
             context=defang_text(_context(working, start, end)),
             label=label,
         )
@@ -256,10 +262,18 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
 
 
 def dedupe_iocs(iocs: list[Ioc]) -> list[Ioc]:
-    """Collapse indicators seen in several files, keeping the first context."""
+    """Collapse indicators seen in several files.
+
+    The first file keeps the context line, and every file that carried the
+    indicator is listed in ``sources``: a family of builds usually shares its
+    callback, and the second build's rule has to match on it as well.
+    """
     out: dict[tuple[str, str], Ioc] = {}
     for ioc in iocs:
-        out.setdefault(ioc.key(), ioc)
+        kept = out.setdefault(ioc.key(), ioc)
+        for url in ioc.sources or [ioc.source_url]:
+            if url not in kept.sources:
+                kept.sources.append(url)
     order = {
         "ipv4": 0, "ipv6": 1, "url": 2, "domain": 3, "email": 4, "secret": 5,
         "btc": 6, "eth": 7, "xmr": 8, "mutex": 9, "registry": 10, "path": 11,
