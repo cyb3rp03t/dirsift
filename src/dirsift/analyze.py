@@ -60,12 +60,25 @@ def _target_address(result: ScanResult) -> str:
 
 
 def place_in_networks(result: ScanResult, table: AsnTable) -> None:
-    """Say which network each address belongs to, from a table already on disk."""
+    """Say which network each address belongs to, from a table already on disk.
+
+    A run that was already placed keeps its answers and the name and date of
+    the table that gave them. A different table on the machine reopening it
+    is not asked: mixing two tables under one date would make the date a lie.
+    The same table may still fill an address the run left unplaced.
+    """
     if table.empty:
+        return
+    if result.asn_source and (result.asn_source, result.asn_stamp) != (
+        table.source,
+        table.stamp,
+    ):
         return
     result.asn_source = table.source
     result.asn_stamp = table.stamp
     for ioc in result.iocs:
+        if ioc.asn:
+            continue
         target = _placeable(ioc)
         if not target:
             continue
@@ -75,6 +88,8 @@ def place_in_networks(result: ScanResult, table: AsnTable) -> None:
     address = _target_address(result)
     if address:
         result.target_ip = address
+        if result.target_asn:
+            return
         found = table.lookup(address)
         if found:
             result.target_asn = found.asn
@@ -106,10 +121,9 @@ def analyze(
         if entry.text_preview:
             iocs.extend(extract_iocs(entry.text_preview, entry.url))
     result.iocs = dedupe_iocs(iocs)
-    place_in_networks(result, asn_table if asn_table is not None else default_table())
-
     for ioc in result.iocs:
-        if not ioc.asn and ioc.value in known:
+        if ioc.value in known:
             ioc.asn, ioc.as_name, ioc.country = known[ioc.value]
 
+    place_in_networks(result, asn_table if asn_table is not None else default_table())
     return result, candidates

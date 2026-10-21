@@ -306,3 +306,53 @@ def test_a_target_written_as_a_name_stays_unresolved(tmp_path: Path):
     result, _ = analyze(result, asn_table=AsnTable.load(table_file(tmp_path)))
     assert result.target_ip is None
     assert result.target_asn is None
+
+
+# -- a run keeps the answers it was given ----------------------------------
+
+#: The same range, announced by someone else in a later table.
+MOVED = ["203.0.113.0\t203.0.113.255\t65001\tUS\tLATER-OWNER"]
+
+
+def placed_run(tmp_path: Path):
+    from dirsift.analyze import analyze
+    from dirsift.models import Entry, ScanResult
+
+    result = ScanResult(
+        root_url="http://203.0.113.24/files/",
+        entries=[
+            Entry(
+                url="http://203.0.113.24/files/note.txt",
+                name="note.txt",
+                depth=1,
+                fetched_bytes=40,
+                text_preview="gate 203.0.113.24",
+            )
+        ],
+    )
+    first = AsnTable.load(table_file(tmp_path, name="first.tsv"))
+    result, _ = analyze(result, asn_table=first)
+    return result, first
+
+
+def test_a_reopened_run_keeps_the_table_it_was_placed_with(tmp_path: Path):
+    """The page must not swap the scan's dated table for whatever this machine has."""
+    from dirsift.analyze import analyze
+
+    result, first = placed_run(tmp_path)
+    later = AsnTable.load(table_file(tmp_path, MOVED, name="later.tsv"))
+    result, _ = analyze(result, asn_table=later)
+    assert result.asn_source == first.source
+    assert result.asn_stamp == first.stamp
+
+
+def test_a_reopened_run_keeps_the_networks_it_was_placed_in(tmp_path: Path):
+    from dirsift.analyze import analyze
+
+    result, _ = placed_run(tmp_path)
+    later = AsnTable.load(table_file(tmp_path, MOVED, name="later.tsv"))
+    result, _ = analyze(result, asn_table=later)
+    assert result.iocs[0].asn == 64496
+    assert result.iocs[0].as_name == "EXAMPLE-HOSTING"
+    assert result.target_asn == 64496
+    assert result.target_country == "NL"
