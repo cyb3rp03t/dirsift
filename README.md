@@ -262,7 +262,7 @@ full binary and never executes anything.
 
 ```bash
 uv sync
-uv run pytest          # 142 tests
+uv run pytest          # 177 tests
 uv run ruff check .
 ```
 
