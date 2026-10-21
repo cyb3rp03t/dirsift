@@ -665,7 +665,7 @@ def test_a_note_with_nothing_to_say_gets_no_marker(tmp_path: Path):
     assert page.count("what this means") == 2
 
 
-# -- an indicator shared between files ----
+# -- an indicator shared between files, and names that are not run names ----
 
 
 def test_the_preview_lists_an_indicator_the_file_shares_with_another(tmp_path: Path):
@@ -690,3 +690,26 @@ def test_the_preview_lists_an_indicator_the_file_shares_with_another(tmp_path: P
     page = preview_of(client, name, "http://203.0.113.24/files/b.bat")
     assert "panel-gate[.]xyz" in page
 
+
+def test_a_run_name_cannot_climb_out_of_the_runs_folder(tmp_path: Path):
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    save_run(tmp_path, ScanResult(root_url="http://203.0.113.24/secret/"), name="outside")
+    client = TestClient(create_app(runs))
+    for name in ("..%5Coutside", "%2E%2E%5Coutside", "..%2Foutside"):
+        assert client.get(f"/runs/{name}").status_code == 404
+        assert client.get(f"/runs/{name}/report.md").status_code == 404
+
+
+def test_a_refusal_page_escapes_what_it_quotes(tmp_path: Path):
+    from dirsift.fetcher import ScopeError
+
+    app = create_app(tmp_path)
+
+    @app.get("/boom")
+    def boom():
+        raise ScopeError("out of scope: http://x.test/<script>alert(1)</script>")
+
+    page = TestClient(app).get("/boom").text
+    assert "<script>" not in page
+    assert "&lt;script&gt;" in page

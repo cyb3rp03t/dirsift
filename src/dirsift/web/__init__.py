@@ -92,6 +92,16 @@ def _failure_message(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
+#: What a run's name may look like: the stem of a file in the runs folder.
+#: No separator of either platform, and nothing that starts with a dot, so a
+#: name can never climb out of that folder.
+RUN_NAME = re.compile(r"\w[\w .-]*")
+
+
+class NoSuchRun(Exception):
+    """A run name that is not a run in this folder."""
+
+
 #: A digest someone pastes: md5, sha1 or sha256, nothing else.
 HASH = re.compile(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")
 DIGEST_IN_FORM = Form(default="")
@@ -241,9 +251,17 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             )
         return out
 
+    def run_path(name: str) -> Path:
+        if not RUN_NAME.fullmatch(name):
+            raise NoSuchRun(name)
+        return runs_dir / f"{name}.json"
+
     def load_run(name: str) -> tuple[ScanResult, list]:
-        path = runs_dir / f"{name}.json"
-        result = ScanResult.model_validate(json.loads(path.read_text(encoding="utf-8")))
+        try:
+            text = run_path(name).read_text(encoding="utf-8")
+            result = ScanResult.model_validate(json.loads(text))
+        except (OSError, ValueError) as exc:
+            raise NoSuchRun(name) from exc
         return analyze(result)
 
     def run_scan(job: Job, options: ScanOptions) -> None:
@@ -346,10 +364,7 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
 
     @app.get("/runs/{name}", response_class=HTMLResponse)
     def run_page(request: Request, name: str, file: str | None = None):
-        try:
-            result, candidates = load_run(name)
-        except (OSError, ValueError):
-            return HTMLResponse("<h1>no such run</h1>", status_code=404)
+        result, candidates = load_run(name)
         entries = sorted(result.entries, key=lambda e: (e.depth, not e.is_dir, e.name))
         opened = next((e for e in result.entries if e.url == file), None) if file else None
         ioc_types: dict[str, int] = {}
@@ -401,7 +416,7 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             except Exception as exc:  # noqa: BLE001 - surfaced in the panel
                 note = f"The lookup failed: {type(exc).__name__}: {exc}"
             else:
-                (runs_dir / f"{name}.json").write_text(
+                run_path(name).write_text(
                     result.model_dump_json(indent=2), encoding="utf-8"
                 )
 
@@ -475,8 +490,13 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
         ]
         return "\n".join(rows)
 
+    @app.exception_handler(NoSuchRun)
+    def no_such_run(request: Request, exc: NoSuchRun):
+        return HTMLResponse("<h1>no such run</h1>", status_code=404)
+
     @app.exception_handler(ScopeError)
     def scope_error(request: Request, exc: ScopeError):
-        return HTMLResponse(f"<h1>refused</h1><p>{exc}</p>", status_code=400)
+        # The message quotes a URL a target's listing supplied: hostile input.
+        return HTMLResponse(f"<h1>refused</h1><p>{escape(str(exc))}</p>", status_code=400)
 
     return app
