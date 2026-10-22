@@ -144,6 +144,9 @@ dirsift scan http://203.0.113.10:8080/files/ --proxy socks5://127.0.0.1:9050
 # re-render a saved run, offline, without touching the target again
 dirsift report run.json -o triage.md
 
+# what changed on the host since the last visit, from two saved runs
+dirsift diff old.json new.json -o changes.md
+
 # just the indicators, for piping
 dirsift iocs run.json --type ipv4
 
@@ -167,6 +170,20 @@ dirsift web
 Scanning is separate from analysing on purpose. `--json` saves everything the
 walk saw; `report` and `iocs` work from that file with no network at all. Sharpen
 a rule, re-run the analysis, leave the target alone.
+
+### Revisiting a host
+
+Staging hosts change between visits: builds are added, detected ones are pulled,
+and now and then the whole box moves to another provider. `diff` puts two saved
+runs side by side and leads with exactly that: a new network, a file whose type
+changed, bytes that changed, builds that joined or left a family, indicators
+that are new or gone.
+
+A file missing from the second run is only called removed when the folder it sat
+in was listed again. A shallower walk, a spent request budget or a refused
+folder leaves it under "not seen" instead, and the options that differ between
+the runs are printed beside it. A file cut at the peek ceiling has no hash, so
+its row says what the listing claims and not what the bytes did.
 
 ### The console
 
@@ -262,7 +279,7 @@ full binary and never executes anything.
 
 ```bash
 uv sync
-uv run pytest          # 177 tests
+uv run pytest          # 204 tests
 uv run ruff check .
 ```
 

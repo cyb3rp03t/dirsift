@@ -17,6 +17,7 @@ from .analyze import analyze
 from .asn import ENV_PATH, AsnTable, default_table
 from .banner import banner
 from .diagnose import explain
+from .diff import diff_runs, render_diff_markdown
 from .enrich import MissingKey, api_key_from_env, lookup_hash
 from .extract import defang
 from .fetcher import ScopeError
@@ -55,15 +56,20 @@ console = Console()
 err = Console(stderr=True)
 
 
-def _write(path: Path, text: str, label: str) -> None:
-    """Write a result, making the folder it was told to write into."""
+def _write(path: Path, text: str, label: str, *, say: Console | None = None) -> None:
+    """Write a result, making the folder it was told to write into.
+
+    The line saying where it went is printed on ``say``, stdout unless told
+    otherwise: a command whose stdout is carrying a report passes stderr, so the
+    pipe stays clean.
+    """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
     except OSError as exc:
         err.print(f"[red]could not write[/] {path}: {exc.strerror}")
         raise typer.Exit(code=2) from None
-    console.print(f"[green]{label}[/] {path}")
+    (say or console).print(f"[green]{label}[/] {path}")
 
 
 def _summary(result: ScanResult, candidates) -> None:
@@ -235,6 +241,34 @@ def report_cmd(
     banner(f"report | {run.name}")
     result, candidates = _load(run)
     markdown = render_markdown(result, candidates, scaffold=scaffold)
+    if out:
+        _write(out, markdown, "report written")
+    else:
+        sys.stdout.write(markdown)
+
+
+@app.command("diff")
+def diff_cmd(
+    old: Annotated[Path, typer.Argument(help="The earlier run, saved with --json.")],
+    new: Annotated[Path, typer.Argument(help="The later run of the same directory.")],
+    out: Annotated[
+        Path | None, typer.Option("--out", "-o", help="Write here instead of stdout.")
+    ] = None,
+    save_json: Annotated[
+        Path | None, typer.Option("--json", help="Save the comparison as JSON.")
+    ] = None,
+) -> None:
+    """Compare two saved runs of one directory. Touches nothing on the network."""
+    banner(f"diff | {old.name} against {new.name}")
+    older, _ = _load(old)
+    newer, _ = _load(new)
+    changes = diff_runs(older, newer)
+    markdown = render_diff_markdown(changes)
+
+    # With no -o the markdown is the output, so every other line goes to stderr.
+    say = console if out else err
+    if save_json:
+        _write(save_json, changes.model_dump_json(indent=2), "comparison saved", say=say)
     if out:
         _write(out, markdown, "report written")
     else:
