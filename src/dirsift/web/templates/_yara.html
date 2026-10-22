@@ -1,6 +1,6 @@
 <div class="preview">
   <div class="preview-head">
-    <p class="quiet" style="margin: 0">Rule</p>
+    <p class="quiet">Rule</p>
     <h2 class="preview-name" tabindex="-1">
       {% if picked %}{{ picked | length }} file{{ "" if picked | length == 1 else "s" }} selected{% else %}Nothing selected{% endif %}
     </h2>
@@ -24,7 +24,7 @@
     <button type="button" class="copy" data-copy="{{ rule }}">copy the rule</button>
     <a class="link-button" href="/runs/{{ name }}/rule.yar?{{ query }}">download rule.yar</a>
   </div>
-  <p class="quiet" style="margin: 0">
+  <p class="quiet flush">
     Two rules: one that identifies the files read whole by digest, and one built
     from the head bytes and strings, which is the one that may catch the next
     build and the one to test before trusting.

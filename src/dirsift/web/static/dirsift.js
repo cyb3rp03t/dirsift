@@ -17,6 +17,31 @@
     });
   }
 
+  /* One shared live region in the corner. A short line fades in, is announced
+     once, and clears itself. Without this script the region stays empty and
+     invisible, so nothing depends on it. */
+  function toast(text, kind) {
+    var region = document.getElementById("toast-region");
+    if (!region) {
+      return;
+    }
+    var node = document.createElement("div");
+    node.className = kind === "alert" ? "toast is-alert" : "toast";
+    node.textContent = text;
+    region.appendChild(node);
+    window.requestAnimationFrame(function () {
+      node.classList.add("is-in");
+    });
+    window.setTimeout(function () {
+      node.classList.remove("is-in");
+      window.setTimeout(function () {
+        if (node.parentNode) {
+          node.parentNode.removeChild(node);
+        }
+      }, 200);
+    }, 2000);
+  }
+
   /* Copy a hash or an indicator without selecting it by hand. */
   onClick("[data-copy]", function (button) {
     var value = button.getAttribute("data-copy");
@@ -27,6 +52,7 @@
       window.setTimeout(function () {
         button.textContent = button.getAttribute("data-label");
       }, 1200);
+      toast(text, text === "blocked" ? "alert" : null);
     };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(value).then(

@@ -3,8 +3,8 @@
 {% block body %}
 
 <section class="card card-hero" aria-labelledby="job-title">
-  <p class="quiet" id="job-title" style="margin: 0 0 var(--space-2)">Scanning</p>
-  <p class="display data" style="margin: 0">{{ job.url | defang }}</p>
+  <p class="quiet flush-top gap-below-2" id="job-title">Scanning</p>
+  <p class="display data flush">{{ job.url | defang }}</p>
 
   <div class="job-live" aria-live="polite">
     <div hx-get="/jobs/{{ job.id }}/status" hx-trigger="load" hx-target="this"

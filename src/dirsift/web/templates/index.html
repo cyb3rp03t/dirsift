@@ -12,7 +12,7 @@
       families, the indicators and the file that drives the rest.
     </p>
 
-    <form method="post" action="/scan" class="grid" style="margin-block-start: var(--space-5)">
+    <form method="post" action="/scan" class="grid gap-above-5">
       <div class="field">
         <label class="label" for="url">Target</label>
         <input id="url" type="text" name="url" required autofocus
@@ -21,11 +21,11 @@
       </div>
 
       <div class="button-row">
-        <div class="field" style="inline-size: 6rem">
+        <div class="field control-xs">
           <label class="label" for="depth">Depth</label>
           <input id="depth" type="number" name="depth" value="2" min="0" max="6">
         </div>
-        <div class="field" style="inline-size: 7rem">
+        <div class="field control-sm">
           <label class="label" for="delay">Delay</label>
           <input id="delay" type="number" name="delay" value="1.0" min="0.2" max="30" step="0.1">
         </div>
@@ -35,27 +35,27 @@
       </div>
     </form>
 
-    <p class="quiet" style="margin-block-end: 0">
+    <p class="quiet flush-bottom">
       One request per second by default, and the walk follows only links the
       listing contains. Loopback and RFC1918 targets need the allow private box.
     </p>
   </section>
 
-  <div class="grid grid-tiles-2" role="group" aria-label="What is saved here">
-    <div class="tile">
+  <div class="stat-strip" role="group" aria-label="What is saved here">
+    <div>
       <span class="label">Saved runs</span>
       <span class="value">{{ totals.runs }}</span>
       <span class="note">re-readable without touching the target</span>
     </div>
-    <div class="tile">
+    <div>
       <span class="label">Files triaged</span>
       <span class="value">{{ totals.files }}</span>
     </div>
-    <div class="tile">
+    <div>
       <span class="label">Indicators</span>
       <span class="value">{{ totals.iocs }}</span>
     </div>
-    <div class="tile">
+    <div>
       <span class="label">Running now</span>
       <span class="value {% if not totals.running %}is-quiet{% endif %}">{{ totals.running }}</span>
     </div>
@@ -66,16 +66,16 @@
 <div class="card card-tight">
   <form hx-post="/verdict" hx-target="#hash-result" hx-swap="innerHTML" class="button-row">
     <label class="label" for="digest">Hash</label>
-    <input id="digest" type="text" name="digest" style="inline-size: 30rem"
+    <input id="digest" type="text" name="digest" class="control-lg"
            placeholder="md5, sha1 or sha256 from anywhere"
            autocomplete="off" spellcheck="false">
     <button class="button is-quiet" type="submit">Ask the scanner</button>
   </form>
-  <p class="quiet" style="margin-block: var(--space-3) 0">
+  <p class="quiet gap-above-3 flush-bottom">
     For a hash that came from somewhere other than a scan. The digest goes to
     VirusTotal and nothing else does.
   </p>
-  <div id="hash-result" aria-live="polite" style="margin-block-start: var(--space-4)"></div>
+  <div id="hash-result" aria-live="polite" class="gap-above-4"></div>
 </div>
 
 {% if jobs %}
@@ -107,32 +107,37 @@
 
 <h2 class="section-title">Saved runs <span class="count">{{ runs | length }}</span></h2>
 {% if runs %}
-<div class="grid grid-halves">
-  {% for run in runs %}
-  <article class="card card-tight">
-    <p class="data" style="margin: 0 0 var(--space-2)">
-      <a href="/runs/{{ run.name }}">{{ run.url | defang }}</a>
-    </p>
-    <ul class="chips">
-      <li class="chip">{{ run.flavor or "unknown index" }}</li>
-      <li class="chip">{{ run.files }} files</li>
-      <li class="chip">{{ run.dirs }} dirs</li>
-      <li class="chip {% if run.iocs %}is-signal{% endif %}">{{ run.iocs }} indicators</li>
-    </ul>
-    <p class="quiet mono-sm" style="margin: var(--space-3) 0 var(--space-2)">{{ run.name }}</p>
-    <p class="button-row" style="margin: 0">
-      <a href="/runs/{{ run.name }}">triage</a>
-      <a href="/runs/{{ run.name }}/report.md">markdown</a>
-      <a href="/runs/{{ run.name }}/iocs.txt">indicators</a>
-      <a href="/runs/{{ run.name }}/hashes.txt">hashes</a>
-    </p>
-  </article>
-  {% endfor %}
+<div class="scroll-region is-tall" tabindex="0" role="region" aria-label="Saved runs">
+  <table class="listing">
+    <thead>
+      <tr>
+        <th>target</th><th>index</th><th class="num">files</th><th class="num">dirs</th>
+        <th class="num">indicators</th><th>run</th><th>exports</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td class="data"><a href="/runs/{{ run.name }}">{{ run.url | defang }}</a></td>
+        <td class="quiet">{{ run.flavor or "unknown index" }}</td>
+        <td class="num">{{ run.files }}</td>
+        <td class="num">{{ run.dirs }}</td>
+        <td class="num">{{ run.iocs }}</td>
+        <td class="quiet mono-sm nowrap">{{ run.name }}</td>
+        <td class="nowrap">
+          <a href="/runs/{{ run.name }}/report.md">markdown</a>
+          <a href="/runs/{{ run.name }}/iocs.txt">indicators</a>
+          <a href="/runs/{{ run.name }}/hashes.txt">hashes</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
 {% else %}
-<div class="card">
-  <h3 style="margin-block-end: var(--space-2)">Nothing scanned yet</h3>
-  <p class="lede" style="margin-block-start: 0">
+<div class="empty-state">
+  <h3>Nothing scanned yet</h3>
+  <p class="lede flush-top">
     A finished scan lands here as JSON. From then on the triage page, the
     markdown report, the indicator list and the hashes are all served from that
     file, so you can sharpen a rule and read the same run again without sending

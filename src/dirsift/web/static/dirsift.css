@@ -5,15 +5,28 @@
    only place a literal value is the point.
 
    The room this is designed for: someone reading a stranger's server at night,
-   deciding in a minute whether the directory is worth an hour. So the evidence
-   wears the monospace face and the interface stays out of its way. */
+   deciding in a minute whether a directory is worth an hour. So the ground is a
+   deep blue dark, the interface stays quiet, the evidence wears the monospace
+   face, and one cyan accent falls only on the thing worth reading. */
 
 @font-face {
-  font-family: "Space Grotesk"; /* ds-allow-hardcode: a font-face declares the family */
-  src: url("/static/fonts/space-grotesk-latin.woff2") format("woff2");
-  font-weight: 400 700;
+  font-family: "IBM Plex Sans"; /* ds-allow-hardcode: a font-face declares the family */
+  src: url("/static/fonts/ibm-plex-sans-latin.woff2") format("woff2");
+  font-weight: 100 700;
   font-display: swap;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2212;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans"; /* ds-allow-hardcode: a font-face declares the family */
+  src: url("/static/fonts/ibm-plex-sans-latin-ext.woff2") format("woff2");
+  font-weight: 100 700;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
 @font-face {
@@ -24,49 +37,63 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2212;
 }
 
+@font-face {
+  font-family: "JetBrains Mono"; /* ds-allow-hardcode: a font-face declares the family */
+  src: url("/static/fonts/jetbrains-mono-latin-ext.woff2") format("woff2");
+  font-weight: 400 700;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
-  /* ground and surfaces */
+  /* ground and surfaces: a deep blue dark, raised and sunken steps off it */
   --ground: #070b12;
-  --panel: #0e1522;
-  --panel-raised: #141d2c;
-  --panel-sunken: #090e17;
+  --surface-1: #0e1522;
+  --surface-2: #141d2c;
+  --surface-sunken: #090e17;
+
+  /* lines: a hair that only divides, a stronger one that bounds a control */
   --line: #1f2a3c;
   --line-strong: #33455f;
 
-  /* ink */
+  /* ink: two blue greys and no more */
   --ink: #e9eefa;
-  --ink-dim: #9fb0cb;
-  --ink-quiet: #7e90ad;
+  --ink-2: #9fb0cb;
 
-  /* signal and status */
-  --signal: #56c7f2;
-  --signal-ink: #04121b;
-  --signal-tint: #12303f;
-  --good: #5ad19a;
-  --warn: #f3b85f;
+  /* the one accent and the washes it lays down on the two code grounds. The
+     --lamp names are kept from the earlier token layer; the value is the cyan
+     the old palette carried, so the accent reads cool, not warm. */
+  --lamp: #56c7f2;
+  --lamp-ink: #04121b;
+  --lamp-wash: #12303f;
+  --lamp-wash-sunken: #0e2836;
+
+  /* status: never chrome, always next to a word. The washes are dark tints of
+     each hue, tuned so the status word on them stays above 4.5:1. */
   --alert: #ff7c88;
-  --track: #1a2434;
+  --alert-wash: #2e151a;
+  --caution: #f3b85f;
+  --caution-wash: #2c2110;
+  --ok: #5ad19a;
+  --ok-wash: #14271f;
 
   /* type */
-  --font-ui: "Space Grotesk", system-ui, -apple-system, Segoe UI, sans-serif;
+  --font-ui: "IBM Plex Sans", system-ui, -apple-system, Segoe UI, sans-serif;
   --font-data: "JetBrains Mono", ui-monospace, Cascadia Mono, Consolas, monospace;
   --text-xs: 0.75rem;
-  --text-sm: 0.8125rem;
-  --text-base: 0.875rem;
-  --text-md: 1rem;
-  --text-lg: 1.25rem;
-  --text-xl: 1.75rem;
-  --text-display: 2.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.5rem;
   --weight-regular: 400;
-  --weight-medium: 500;
-  --weight-bold: 700;
-  --leading-tight: 1.15;
-  --leading-body: 1.55;
-  --leading-code: 1.4;
-  --tracking-wide: 0.08em;
-  --tracking-brand: 0.22em;
+  --weight-bold: 600;
+  --leading-tight: 1.33;
+  --leading-heading: 1.25;
+  --leading-body: 1.5;
+  --leading-code: 1.5;
+  --tracking-brand: 0.18em;
 
-  /* space */
+  /* space on a 4px grid */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -75,33 +102,40 @@
   --space-6: 2rem;
   --space-7: 3rem;
 
-  /* shape, depth, motion */
-  --measure-note: 62ch;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
+  /* shape: a 4px control, a 6px panel, a pill kept for the one count badge */
+  --radius-control: 4px;
+  --radius-panel: 6px;
   --radius-pill: 999px;
   --border-hair: 1px;
   --border-thick: 2px;
-  --blur-header: 12px;
-  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.02), 0 12px 32px rgba(3, 7, 14, 0.55);
-  --shadow-lift: 0 18px 44px rgba(3, 7, 14, 0.7);
+  --dot: 5px;
+
+  /* depth and motion: no shadow but one overlay, no move but a 120ms fade */
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --focus-ring: 0 0 0 2px var(--ground), 0 0 0 4px var(--lamp);
   --duration-instant: 0.01ms;
   --duration-fast: 120ms;
-  --duration-base: 200ms;
-  --duration-sweep: 1.4s;
-  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* sizing */
-  --control-h: 2.5rem;
-  --control-h-sm: 1.75rem;
+  --header-h: 2.75rem;
+  --control-h: 2rem;
+  --control-h-xs: 1.75rem;
+  --control-h-target: 2.5rem;
+  --tab-h: 2.25rem;
+  --touch-h: 2.75rem;
+  --row-h: 2rem;
+  --control-w-xs: 6rem;
+  --control-w-sm: 7rem;
+  --control-w-md: 12rem;
+  --control-w-lg: 30rem;
   --icon: 1rem;
-  --icon-lg: 1.25rem;
-  --page-max: 96rem;
+  --gutter: 3.5ch;
+  --page-max: 90rem;
   --measure: 68ch;
+  --measure-note: 62ch;
   --scroll-tall: 32rem;
   --scroll-mid: 22rem;
-  --focus-ring: 0 0 0 2px var(--ground), 0 0 0 4px var(--signal);
 }
 
 *,
@@ -119,30 +153,33 @@ body {
   background: var(--ground);
   color: var(--ink);
   font-family: var(--font-ui);
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   line-height: var(--leading-body);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Scrollbars are part of the surface, not a light rectangle pasted onto it. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
 }
 
+/* Links carry an underline, not a colour: the one accent colour is saved for
+   the evidence, so a link has to tell itself apart some other way. */
 a {
-  color: var(--signal);
-  text-decoration: none;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  text-decoration-color: var(--line-strong);
 }
 
 a:hover {
-  text-decoration: underline;
+  text-decoration-color: var(--ink);
 }
 
 :where(a, button, input, select, summary, [tabindex]):focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
 }
 
 .skip-link {
@@ -151,10 +188,11 @@ a:hover {
   inset-block-start: calc(var(--space-7) * -1);
   z-index: 10;
   padding: var(--space-2) var(--space-4);
-  background: var(--signal);
-  color: var(--signal-ink);
-  border-radius: var(--radius-sm);
-  font-weight: var(--weight-medium);
+  background: var(--surface-2);
+  color: var(--ink);
+  border: var(--border-hair) solid var(--line-strong);
+  border-radius: var(--radius-control);
+  text-decoration: none;
   transition: inset-block-start var(--duration-fast) var(--ease);
 }
 
@@ -172,9 +210,9 @@ a:hover {
   align-items: center;
   gap: var(--space-4);
   flex-wrap: wrap;
-  padding: var(--space-3) var(--space-5);
-  background: color-mix(in srgb, var(--ground) 88%, transparent);
-  backdrop-filter: blur(var(--blur-header));
+  min-block-size: var(--header-h);
+  padding: 0 var(--space-5);
+  background: var(--ground);
   border-block-end: var(--border-hair) solid var(--line);
 }
 
@@ -185,39 +223,71 @@ a:hover {
   color: var(--ink);
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-brand);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  text-decoration: none;
 }
 
 .brand:hover {
-  text-decoration: none;
-  color: var(--signal);
+  color: var(--ink);
 }
 
 .brand-mark {
-  color: var(--signal);
+  color: var(--ink-2);
+}
+
+.header-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  margin-inline-start: auto;
 }
 
 .app-nav {
   display: flex;
   gap: var(--space-4);
   align-items: center;
-  margin-inline-start: auto;
   font-size: var(--text-sm);
 }
 
 .app-nav a {
-  color: var(--ink-dim);
+  color: var(--ink-2);
   padding-block: var(--space-1);
+  text-decoration: none;
 }
 
 .app-nav a:hover,
 .app-nav a[aria-current="page"] {
   color: var(--ink);
-  text-decoration: none;
 }
 
 .app-nav a[aria-current="page"] {
-  border-block-end: var(--border-hair) solid var(--signal);
+  border-block-end: var(--border-thick) solid var(--ink);
+}
+
+/* Keyboard hints, read as text by a screen reader, kept to the keys that
+   actually work on the page they sit above. */
+.hints {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--control-h-xs);
+  min-block-size: var(--control-h-xs);
+  padding-inline: var(--space-1);
+  border: var(--border-hair) solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-1);
+  color: var(--ink-2);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  line-height: 1;
 }
 
 main {
@@ -231,22 +301,22 @@ main {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  color: var(--ink-dim);
+  color: var(--ink-2);
   font-size: var(--text-sm);
   margin-block-end: var(--space-4);
+  text-decoration: none;
 }
 
 .backlink:hover {
   color: var(--ink);
-  text-decoration: none;
 }
 
 .app-footer {
   max-width: var(--page-max);
   margin-inline: auto;
-  padding: var(--space-6) var(--space-5) var(--space-7);
-  color: var(--ink-quiet);
-  font-size: var(--text-sm);
+  padding: var(--space-5) var(--space-5) var(--space-7);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
   border-block-start: var(--border-hair) solid var(--line);
 }
 
@@ -261,20 +331,20 @@ h1,
 h2,
 h3 {
   margin: 0;
-  line-height: var(--leading-tight);
+  line-height: var(--leading-heading);
   font-weight: var(--weight-bold);
 }
 
 h1 {
-  font-size: var(--text-xl);
+  font-size: var(--text-lg);
   letter-spacing: -0.01em;
 }
 
+/* The old landing display size is gone; a page heading is a heading. */
 .display {
-  font-size: var(--text-display);
+  font-size: var(--text-lg);
   font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
-  letter-spacing: -0.02em;
+  line-height: var(--leading-heading);
   overflow-wrap: anywhere;
 }
 
@@ -282,18 +352,20 @@ h1 {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
-  margin-block: var(--space-6) var(--space-3);
-  font-size: var(--text-md);
+  margin-block: var(--space-5) var(--space-3);
+  font-size: var(--text-base);
 }
 
 .section-title .count {
-  color: var(--ink-quiet);
-  font-size: var(--text-sm);
+  color: var(--ink-2);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
   font-weight: var(--weight-regular);
+  font-variant-numeric: tabular-nums;
 }
 
 .lede {
-  color: var(--ink-dim);
+  color: var(--ink-2);
   margin: var(--space-2) 0 0;
 }
 
@@ -302,11 +374,11 @@ main p:not(.display):not(.button-row) {
 }
 
 .dim {
-  color: var(--ink-dim);
+  color: var(--ink-2);
 }
 
 .quiet {
-  color: var(--ink-quiet);
+  color: var(--ink-2);
 }
 
 .data {
@@ -323,14 +395,15 @@ main p:not(.display):not(.button-row) {
   white-space: nowrap;
 }
 
-/* ---- cards and grids --------------------------------------------------- */
+/* ---- panels (frames) --------------------------------------------------- */
 
+/* The card is now a frame: one hair border, a 6px radius, no shadow and no
+   gradient. Nothing is nested inside another frame. */
 .card {
-  background: var(--panel);
+  background: var(--surface-1);
   border: var(--border-hair) solid var(--line);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-panel);
+  padding: var(--space-4);
   min-width: 0;
 }
 
@@ -338,26 +411,25 @@ main p:not(.display):not(.button-row) {
   padding: var(--space-4);
 }
 
+/* The hero was a gradient; it is a plain frame now. */
 .card-hero {
-  background: linear-gradient(160deg, var(--panel-raised), var(--panel) 60%);
-  border-color: var(--line-strong);
+  background: var(--surface-1);
+  border-color: var(--line);
 }
 
-/* A templated error page (scan, run or scope not found): one card that stacks a
-   heading, a plain notice and an optional quoted value, spaced by the grid gap
-   rather than per element margins. */
 .error-card {
   display: grid;
   gap: var(--space-4);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
 }
 
 .error-card > * {
   margin: 0;
 }
 
-/* The scan page live region. The wrapper is permanent and holds aria-live; the
-   element inside it is what htmx swaps as the status polls, so the live region
-   stays in the DOM and each update is announced. */
 .job-live {
   margin-block-start: var(--space-5);
 }
@@ -376,7 +448,6 @@ main p:not(.display):not(.button-row) {
   align-items: start;
 }
 
-/* Four metrics read as a block of four, not as three and a leftover. */
 .grid-tiles-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -402,17 +473,62 @@ main p:not(.display):not(.button-row) {
 
 .workspace > .preview-column {
   position: sticky;
-  inset-block-start: var(--space-7);
+  inset-block-start: var(--space-6);
   max-block-size: calc(100vh - var(--space-7) - var(--space-4));
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
+/* ---- stat strip (dashboard counters) ----------------------------------- */
+
+/* Four counts read as one instrument, divided by a single seam, not as four
+   separate cards. */
+.stat-strip {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  border: var(--border-hair) solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface-1);
+}
+
+.stat-strip > div {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+  flex: 1 1 8rem;
+  min-inline-size: 0;
+  padding: var(--space-3) var(--space-4);
+  border-inline-end: var(--border-hair) solid var(--line);
+}
+
+.stat-strip > div:last-child {
+  border-inline-end: 0;
+}
+
+.stat-strip .label {
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+}
+
+.stat-strip .value {
+  font-family: var(--font-data);
+  font-size: var(--text-lg);
+  line-height: var(--leading-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-strip .value.is-quiet {
+  color: var(--ink-2);
+}
+
+.stat-strip .note {
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+}
+
 /* ---- run workbench ------------------------------------------------------ */
 
-/* The run page answers one question first: what is here, and what to read.
-   So the numbers sit in one strip, the parts of the run sit behind tabs, and
-   the listing shares the screen with the preview. */
 .run-summary {
   display: grid;
   gap: var(--space-3);
@@ -445,8 +561,8 @@ main p:not(.display):not(.button-row) {
   flex-wrap: wrap;
   margin: 0;
   border: var(--border-hair) solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--panel);
+  border-radius: var(--radius-panel);
+  background: var(--surface-1);
 }
 
 .summary-strip > div {
@@ -462,8 +578,13 @@ main p:not(.display):not(.button-row) {
   border-inline-end: 0;
 }
 
+/* The split between who the host is and how much was read. */
+.summary-strip > div.group-break {
+  margin-inline-start: var(--space-4);
+}
+
 .summary-strip dt {
-  color: var(--ink-quiet);
+  color: var(--ink-2);
   font-size: var(--text-xs);
 }
 
@@ -476,7 +597,7 @@ main p:not(.display):not(.button-row) {
 }
 
 .none {
-  color: var(--ink-quiet);
+  color: var(--ink-2);
 }
 
 .run-tabs {
@@ -486,7 +607,7 @@ main p:not(.display):not(.button-row) {
 
 .run-tabs-list {
   display: flex;
-  gap: var(--space-1);
+  gap: var(--space-4);
   overflow-x: auto;
 }
 
@@ -495,20 +616,19 @@ main p:not(.display):not(.button-row) {
   align-items: center;
   gap: var(--space-2);
   flex: none;
-  min-block-size: var(--control-h);
-  padding-inline: var(--space-3);
-  color: var(--ink-dim);
+  min-block-size: var(--tab-h);
+  color: var(--ink-2);
   white-space: nowrap;
+  text-decoration: none;
   border-block-end: var(--border-thick) solid transparent;
 }
 
 .run-tab:hover {
   color: var(--ink);
-  text-decoration: none;
 }
 
 .run-tab .count {
-  color: var(--ink-quiet);
+  color: var(--ink-2);
   font-family: var(--font-data);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
@@ -517,11 +637,9 @@ main p:not(.display):not(.button-row) {
 .run-tab.is-current,
 .run-tab[aria-selected="true"] {
   color: var(--ink);
-  border-block-end-color: var(--signal);
+  border-block-end-color: var(--ink);
 }
 
-/* Without the script every part of the run is on the page, one under the
-   other, and the tabs are links down to them. With it, one part at a time. */
 .run-panel + .run-panel {
   margin-block-start: var(--space-6);
 }
@@ -568,9 +686,9 @@ main p:not(.display):not(.button-row) {
 }
 
 .drivers-title {
-  color: var(--ink-quiet);
+  color: var(--ink-2);
   font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-bold);
 }
 
 .drivers-list {
@@ -589,31 +707,27 @@ main p:not(.display):not(.button-row) {
   min-inline-size: 0;
 }
 
+/* The one place on the run page the lamp lands first: a driver is the file that
+   drives the rest, so its score is evidence. */
 .driver-score,
 .driver-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-inline-size: var(--control-h-sm);
-  padding-inline: var(--space-1);
-  border: var(--border-hair) solid var(--signal-tint);
-  border-radius: var(--radius-pill);
-  background: var(--signal-tint);
-  color: var(--signal);
+  min-inline-size: var(--control-h-xs);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-control);
+  background: var(--lamp-wash);
+  color: var(--lamp);
   font-family: var(--font-data);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
 
 .driver-why {
-  color: var(--ink-dim);
+  color: var(--ink-2);
   font-size: var(--text-sm);
   min-inline-size: 0;
-}
-
-table.listing td {
-  padding-block: var(--space-1);
-  vertical-align: middle;
 }
 
 .inventory {
@@ -632,7 +746,7 @@ table.listing td {
 }
 
 .settings-list dt {
-  color: var(--ink-quiet);
+  color: var(--ink-2);
   font-size: var(--text-xs);
 }
 
@@ -642,41 +756,7 @@ table.listing td {
   font-size: var(--text-sm);
 }
 
-/* ---- stat tiles -------------------------------------------------------- */
-
-.tile {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-4);
-  background: var(--panel);
-  border: var(--border-hair) solid var(--line);
-  border-radius: var(--radius-md);
-  min-width: 0;
-}
-
-.tile .label {
-  color: var(--ink-quiet);
-  font-size: var(--text-sm);
-}
-
-.tile .value {
-  font-size: var(--text-xl);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
-  font-variant-numeric: tabular-nums;
-}
-
-.tile .value.is-quiet {
-  color: var(--ink-dim);
-}
-
-.tile .note {
-  color: var(--ink-quiet);
-  font-size: var(--text-xs);
-}
-
-/* ---- chips ------------------------------------------------------------- */
+/* ---- chips: status, meta, count ---------------------------------------- */
 
 .chips {
   display: flex;
@@ -687,38 +767,78 @@ table.listing td {
   list-style: none;
 }
 
+.chips.is-stacked {
+  flex-direction: column;
+  align-items: start;
+}
+
+/* A plain chip is a meta tag: quiet, square, no colour. */
 .chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
-  border: var(--border-hair) solid var(--line);
-  border-radius: var(--radius-pill);
-  background: var(--panel-raised);
-  color: var(--ink-dim);
-  font-size: var(--text-sm);
+  min-block-size: var(--control-h-xs);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 
+/* A status chip carries a dot in its own colour and a wash behind it, so the
+   state reads without leaning on colour alone. */
+.chip.is-signal,
+.chip.is-warn,
+.chip.is-alert,
+.chip.is-good {
+  gap: var(--space-1);
+}
+
+.chip.is-signal::before,
+.chip.is-warn::before,
+.chip.is-alert::before,
+.chip.is-good::before {
+  content: "";
+  inline-size: var(--dot);
+  block-size: var(--dot);
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
 .chip.is-signal {
-  color: var(--signal);
-  border-color: var(--signal-tint);
-  background: var(--signal-tint);
+  color: var(--ink);
 }
 
 .chip.is-warn {
-  color: var(--warn);
-  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  color: var(--caution);
+  background: var(--caution-wash);
 }
 
 .chip.is-alert {
   color: var(--alert);
-  border-color: color-mix(in srgb, var(--alert) 35%, transparent);
+  background: var(--alert-wash);
 }
 
 .chip.is-good {
-  color: var(--good);
-  border-color: color-mix(in srgb, var(--good) 35%, transparent);
+  color: var(--ok);
+  background: var(--ok-wash);
+}
+
+/* The meta line in the preview head: plain words, spaced, not a row of chips. */
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+.meta > li {
+  display: inline;
 }
 
 /* ---- controls ---------------------------------------------------------- */
@@ -732,7 +852,7 @@ table.listing td {
 
 .field > .label,
 label.inline {
-  color: var(--ink-dim);
+  color: var(--ink-2);
   font-size: var(--text-sm);
 }
 
@@ -743,21 +863,25 @@ select {
   min-inline-size: 0;
   block-size: var(--control-h);
   padding-inline: var(--space-3);
-  background: var(--panel-sunken);
+  background: var(--surface-sunken);
   color: var(--ink);
   border: var(--border-hair) solid var(--line-strong);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   font: inherit;
   font-family: var(--font-data);
 }
 
+#url {
+  block-size: var(--control-h-target);
+}
+
 input[type="text"]::placeholder {
-  color: var(--ink-quiet);
+  color: var(--ink-2);
 }
 
 input:hover,
 select:hover {
-  border-color: var(--signal);
+  border-color: var(--ink-2);
 }
 
 input[aria-invalid="true"] {
@@ -767,7 +891,8 @@ input[aria-invalid="true"] {
 input[disabled],
 select[disabled],
 button[disabled] {
-  opacity: 0.55;
+  color: var(--ink-2);
+  border-color: var(--line);
   cursor: not-allowed;
 }
 
@@ -781,34 +906,39 @@ label.inline {
 input[type="checkbox"] {
   inline-size: var(--icon);
   block-size: var(--icon);
-  accent-color: var(--signal);
+  accent-color: var(--ink);
 }
 
+/* The primary action: the only filled button on the page, and the only button
+   that wears the lamp. */
 .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
   block-size: var(--control-h);
-  padding-inline: var(--space-5);
+  padding-inline: var(--space-4);
   border: var(--border-hair) solid transparent;
-  border-radius: var(--radius-pill);
-  background: var(--signal);
-  color: var(--signal-ink);
+  border-radius: var(--radius-control);
+  background: var(--lamp);
+  color: var(--lamp-ink);
   font: inherit;
   font-weight: var(--weight-bold);
+  text-decoration: none;
   cursor: pointer;
-  transition: filter var(--duration-fast) var(--ease);
+  transition: background-color var(--duration-fast) var(--ease);
 }
 
 .button:hover {
-  filter: brightness(1.1);
+  background: color-mix(in srgb, var(--lamp) 88%, white);
 }
 
 .button:active {
-  filter: brightness(0.94);
+  background: color-mix(in srgb, var(--lamp) 85%, black);
 }
 
+/* Outline: the restrained button, used for a step that reaches outside (ask the
+   scanner, build a rule) and for the way back out of a sheet. */
 .button.is-quiet {
   background: transparent;
   color: var(--ink);
@@ -816,8 +946,7 @@ input[type="checkbox"] {
 }
 
 .button.is-quiet:hover {
-  border-color: var(--signal);
-  filter: none;
+  background: var(--surface-2);
 }
 
 .button[aria-busy="true"] {
@@ -831,27 +960,31 @@ input[type="checkbox"] {
   align-items: center;
 }
 
+/* File links in the listing and the drivers: ink, not a colour, because a file
+   name is data. The open file reads bold. */
 .link-button {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-block-size: var(--control-h-sm);
+  min-block-size: var(--control-h-xs);
   padding: 0;
   border: 0;
   background: none;
-  color: var(--signal);
+  color: var(--ink);
   font: inherit;
   font-family: var(--font-data);
   text-align: start;
+  text-decoration: none;
   cursor: pointer;
 }
 
 .link-button:hover {
   text-decoration: underline;
+  text-decoration-color: var(--line-strong);
 }
 
 .link-button[aria-busy="true"] {
-  opacity: 0.6;
+  color: var(--ink-2);
 }
 
 .link-button.is-selected {
@@ -859,14 +992,26 @@ input[type="checkbox"] {
   font-weight: var(--weight-bold);
 }
 
-/* ---- tables ------------------------------------------------------------ */
+/* ---- tables (dense data grid) ------------------------------------------ */
+
+/* The listing used to live in a card; it stands bare now, the table lines are
+   its structure, and the pick action sits under it as a quiet bar. */
+.listing-form {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.listing-form .button-row {
+  padding-block-start: var(--space-2);
+  border-block-start: var(--border-hair) solid var(--line);
+}
 
 .scroll-region {
   position: relative;
   overflow: auto;
   min-width: 0;
   max-width: 100%;
-  border-radius: var(--radius-md);
 }
 
 .scroll-region.is-tall {
@@ -881,11 +1026,8 @@ input[type="checkbox"] {
   box-shadow: var(--focus-ring);
 }
 
-/* ---- why a note says what it says -------------------------------------- */
-
-/* A status code is not a diagnosis. The sentence that explains it is folded
-   away because most rows do not need reading twice, and the marker stays small
-   so the note itself is still the thing you see first. */
+/* A status code is not a diagnosis; the sentence that explains it is folded
+   away because most rows do not need reading twice. */
 .why {
   margin-block-start: var(--space-2);
   font-size: var(--text-xs);
@@ -895,11 +1037,12 @@ input[type="checkbox"] {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-  border: var(--border-hair) solid var(--line);
-  border-radius: var(--radius-pill);
-  background: var(--panel-raised);
-  color: var(--ink-dim);
+  min-block-size: var(--control-h-xs);
+  padding: 0 var(--space-2);
+  border: var(--border-hair) solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  color: var(--ink-2);
   cursor: pointer;
   list-style: none;
   inline-size: fit-content;
@@ -924,7 +1067,6 @@ input[type="checkbox"] {
 
 .why > summary:hover {
   color: var(--ink);
-  border-color: var(--line-strong);
 }
 
 .why[open] > summary {
@@ -935,12 +1077,12 @@ input[type="checkbox"] {
 .why > p {
   margin: 0;
   max-inline-size: var(--measure-note);
-  color: var(--ink-dim);
+  color: var(--ink-2);
   line-height: var(--leading-body);
 }
 
 .scroll-hint {
-  color: var(--ink-quiet);
+  color: var(--ink-2);
   font-size: var(--text-xs);
   margin: var(--space-2) 0 0;
 }
@@ -951,13 +1093,14 @@ table {
   font-size: var(--text-sm);
 }
 
+/* The header is a line of labels on the page ground, not a filled band. */
 thead th {
   position: sticky;
   inset-block-start: 0;
   z-index: 1;
-  background: var(--panel-raised);
-  color: var(--ink-quiet);
-  font-weight: var(--weight-medium);
+  background: var(--ground);
+  color: var(--ink-2);
+  font-weight: var(--weight-regular);
   text-align: start;
   white-space: nowrap;
   padding: var(--space-2) var(--space-3);
@@ -965,22 +1108,23 @@ thead th {
 }
 
 tbody td {
-  padding: var(--space-2) var(--space-3);
+  block-size: var(--row-h);
+  padding: 0 var(--space-3);
   border-block-end: var(--border-hair) solid var(--line);
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 tbody tr:hover td {
-  background: var(--panel-raised);
+  background: var(--surface-2);
 }
 
 tbody tr.is-selected td {
-  background: var(--signal-tint);
+  background: var(--surface-2);
 }
 
 tbody tr.is-selected td,
 tbody tr.is-selected td .quiet {
-  color: var(--ink-dim);
+  color: var(--ink-2);
 }
 
 td.num,
@@ -989,9 +1133,8 @@ th.num {
   font-variant-numeric: tabular-nums;
 }
 
-/* The listing carries whole hashes, so it sizes to its content and scrolls
-   inside its own box. Squeezing it to the panel width breaks file names into
-   one letter per line, which is unreadable. */
+/* The listing sits bare inside its panel and sizes to its content, so a whole
+   sha256 does not break into one letter a line. */
 table.listing {
   inline-size: max-content;
   min-inline-size: 100%;
@@ -1004,6 +1147,32 @@ table.listing td {
 
 table.listing td.data {
   overflow-wrap: normal;
+}
+
+/* The open file's row: a surface step and a 2px lamp edge on the lead cell.
+   Every lead cell carries the edge transparent so nothing shifts when a row is
+   picked. This, the drivers and the indicator marks are the only lamp on the
+   page. */
+table.listing tbody td:first-child {
+  border-inline-start: var(--border-thick) solid transparent;
+}
+
+table.listing tbody tr.is-selected td:first-child {
+  border-inline-start-color: var(--lamp);
+}
+
+/* A sha256 is shown short and faded past its first run of characters, but the
+   whole value stays in the text so it reads and copies in full. */
+.sha {
+  font-family: var(--font-data);
+}
+
+.sha .head {
+  color: var(--ink);
+}
+
+.sha .tail {
+  color: var(--ink-2);
 }
 
 /* ---- bar chart --------------------------------------------------------- */
@@ -1022,27 +1191,30 @@ table.listing td.data {
 }
 
 .bar-label {
-  color: var(--ink-dim);
+  color: var(--ink-2);
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 
 .bar-track {
   block-size: var(--space-2);
-  background: var(--track);
+  background: var(--surface-2);
   border-radius: var(--radius-pill);
   overflow: hidden;
 }
 
+/* The server hands the share over as --fill, the only value a template sets
+   inline. The bars are a quiet read, so they fill in ink, not the lamp. */
 .bar-fill {
   display: block;
+  inline-size: var(--fill);
   block-size: 100%;
-  background: var(--signal);
+  background: var(--ink-2);
   border-radius: var(--radius-pill);
 }
 
 .bar-fill.is-warn {
-  background: var(--warn);
+  background: var(--caution);
 }
 
 .bar-value {
@@ -1076,48 +1248,49 @@ table.listing td.data {
   font-family: var(--font-data);
   font-size: var(--text-lg);
   font-weight: var(--weight-bold);
-  color: var(--signal);
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 
 .candidate-why {
-  color: var(--ink-dim);
+  color: var(--ink-2);
   font-size: var(--text-sm);
   margin: 0;
 }
 
-/* ---- notices ----------------------------------------------------------- */
+/* ---- alerts and notices ------------------------------------------------ */
 
+/* One block, a 2px status edge on the lead side, never a box inside a box. */
 .notice {
   display: flex;
   gap: var(--space-3);
   align-items: flex-start;
   padding: var(--space-3) var(--space-4);
   border: var(--border-hair) solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--panel-raised);
-  color: var(--ink-dim);
+  border-inline-start: var(--border-thick) solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-1);
+  color: var(--ink-2);
 }
 
 .notice p {
   margin: 0;
 }
 
-/* A link sitting inside a notice shares the notice colour, so colour alone
-   cannot tell it apart from the sentence around it. Keep it underlined so it
-   reads as a link without leaning on colour. */
+/* A link inside a notice shares the notice colour, so it keeps its underline to
+   read as a link without leaning on colour. */
 .notice a {
   color: inherit;
   text-decoration: underline;
 }
 
 .notice.is-warn {
-  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
-  color: var(--warn);
+  border-inline-start-color: var(--caution);
+  color: var(--caution);
 }
 
 .notice.is-alert {
-  border-color: color-mix(in srgb, var(--alert) 40%, transparent);
+  border-inline-start-color: var(--alert);
   color: var(--alert);
 }
 
@@ -1128,6 +1301,8 @@ table.listing td.data {
 
 /* ---- preview panel ----------------------------------------------------- */
 
+/* Not a card: the panel is set off by a single line on its lead edge, flush to
+   the workspace, no radius. */
 .preview {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1142,7 +1317,14 @@ table.listing td.data {
   min-inline-size: 0;
 }
 
-/* The way back out of the narrow-screen sheet. Hidden wherever there is no sheet. */
+.preview-column > .card {
+  background: var(--surface-1);
+  border: 0;
+  border-inline-start: var(--border-hair) solid var(--line);
+  border-radius: 0;
+  padding: var(--space-4);
+}
+
 .sheet-bar {
   display: none;
   position: sticky;
@@ -1150,8 +1332,9 @@ table.listing td.data {
   z-index: 1;
   align-items: center;
   gap: var(--space-3);
-  padding-block: var(--space-3);
+  min-block-size: var(--header-h);
   background: var(--ground);
+  border-block-end: var(--border-hair) solid var(--line);
 }
 
 .preview-head {
@@ -1165,14 +1348,16 @@ table.listing td.data {
 
 .preview-name {
   font-family: var(--font-data);
-  font-size: var(--text-lg);
+  font-size: var(--text-base);
   font-weight: var(--weight-bold);
   overflow-wrap: anywhere;
 }
 
+/* ---- preview tabs ------------------------------------------------------ */
+
 .tabs {
   display: flex;
-  gap: var(--space-1);
+  gap: var(--space-4);
   flex-wrap: wrap;
   border-block-end: var(--border-hair) solid var(--line);
 }
@@ -1181,10 +1366,10 @@ table.listing td.data {
   appearance: none;
   border: 0;
   background: none;
-  color: var(--ink-dim);
+  color: var(--ink-2);
   font: inherit;
-  padding: var(--space-2) var(--space-3);
-  min-block-size: var(--control-h-sm);
+  padding: 0;
+  min-block-size: var(--tab-h);
   cursor: pointer;
   border-block-end: var(--border-thick) solid transparent;
 }
@@ -1195,7 +1380,7 @@ table.listing td.data {
 
 .tab[aria-selected="true"] {
   color: var(--ink);
-  border-block-end-color: var(--signal);
+  border-block-end-color: var(--ink);
 }
 
 .tab-panel[hidden] {
@@ -1209,7 +1394,7 @@ table.listing td.data {
 
 .hash-row {
   display: grid;
-  grid-template-columns: 4rem minmax(0, 1fr) auto;
+  grid-template-columns: 5rem minmax(0, 1fr) auto;
   gap: var(--space-3);
   align-items: center;
   font-family: var(--font-data);
@@ -1217,45 +1402,48 @@ table.listing td.data {
 }
 
 .hash-row .name {
-  color: var(--ink-quiet);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
 }
 
 .hash-row .value {
   overflow-wrap: anywhere;
 }
 
+/* Ghost: the copy and wrap controls, and the outward checks. */
 .copy {
   appearance: none;
   border: var(--border-hair) solid var(--line-strong);
   background: transparent;
-  color: var(--ink-dim);
-  border-radius: var(--radius-sm);
-  min-block-size: var(--control-h-sm);
-  min-inline-size: var(--control-h-sm);
+  color: var(--ink);
+  border-radius: var(--radius-control);
+  min-block-size: var(--control-h-xs);
+  min-inline-size: var(--control-h-xs);
   padding-inline: var(--space-2);
   font: inherit;
   font-size: var(--text-xs);
+  text-decoration: none;
   cursor: pointer;
 }
 
 .copy:hover {
-  color: var(--ink);
-  border-color: var(--signal);
+  background: var(--surface-2);
 }
 
 a.copy {
   display: inline-flex;
   align-items: center;
-  text-decoration: none;
-  padding-block: var(--space-1);
+  gap: var(--space-1);
 }
+
+/* ---- code view (contents, diff, rule, hex) ----------------------------- */
 
 pre.source {
   margin: 0;
-  padding: var(--space-3);
-  background: var(--panel-sunken);
+  padding: var(--space-3) var(--space-3) var(--space-3) 0;
+  background: var(--surface-sunken);
   border: var(--border-hair) solid var(--line);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-panel);
   font-family: var(--font-data);
   font-size: var(--text-sm);
   line-height: var(--leading-code);
@@ -1274,12 +1462,15 @@ pre.source .line {
   display: block;
 }
 
+/* A separated number gutter: faded, right aligned, divided by one hair. */
 pre.source .line::before {
   content: attr(data-line);
   display: inline-block;
-  inline-size: 3ch;
+  inline-size: var(--gutter);
   margin-inline-end: var(--space-3);
-  color: var(--ink-quiet);
+  padding-inline-end: var(--space-2);
+  border-inline-end: var(--border-hair) solid var(--line);
+  color: var(--ink-2);
   text-align: end;
   user-select: none;
 }
@@ -1289,7 +1480,7 @@ pre.source .line::before {
 }
 
 .diff-line.is-add {
-  color: var(--good);
+  color: var(--ok);
 }
 
 .diff-line.is-del {
@@ -1297,18 +1488,25 @@ pre.source .line::before {
 }
 
 .diff-line.is-meta {
-  color: var(--ink-quiet);
+  color: var(--ink-2);
 }
 
+/* The search highlight marks a whole matched line with a surface step. */
 pre.source .line.is-hit {
-  background: var(--signal-tint);
+  background: var(--surface-2);
 }
 
+/* An indicator in the contents is the evidence the lamp is for: a wash behind
+   it, a lamp underline, and the number of its line turns lamp too. */
 pre.source mark {
-  background: var(--signal-tint);
-  color: var(--signal);
-  border-radius: var(--radius-sm);
+  background: var(--lamp-wash-sunken);
+  color: var(--ink);
+  border-block-end: var(--border-hair) solid var(--lamp);
   padding-inline: var(--space-1);
+}
+
+pre.source .line:has(mark)::before {
+  color: var(--lamp);
 }
 
 .hexdump {
@@ -1317,30 +1515,52 @@ pre.source mark {
 }
 
 .hexdump td {
+  block-size: auto;
   white-space: pre;
   border-block-end: 0;
   padding-block: 0;
 }
 
 .hexdump .offset {
-  color: var(--ink-quiet);
+  color: var(--ink-2);
 }
 
 .hexdump .ascii {
-  color: var(--ink-dim);
+  color: var(--ink-2);
 }
 
 .empty {
-  color: var(--ink-quiet);
+  color: var(--ink-2);
   margin: 0;
+}
+
+/* An empty panel reads as a bordered note, left aligned, one action at most. */
+.empty-state {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  padding: var(--space-5);
+  border: var(--border-hair) solid var(--line);
+  border-radius: var(--radius-panel);
+}
+
+.empty-state h3 {
+  font-size: var(--text-sm);
+}
+
+.empty-state p {
+  margin: 0;
+  color: var(--ink-2);
 }
 
 /* ---- job progress ------------------------------------------------------ */
 
+/* A static 4px rail: it marks that work is underway without pretending to know
+   a percentage, and it does not move. The counts below it carry the real news. */
 .progress-track {
-  block-size: var(--space-2);
+  block-size: var(--space-1);
   border-radius: var(--radius-pill);
-  background: var(--track);
+  background: var(--surface-2);
   overflow: hidden;
 }
 
@@ -1349,20 +1569,120 @@ pre.source mark {
   block-size: 100%;
   inline-size: 35%;
   border-radius: var(--radius-pill);
-  background: var(--signal);
-  animation: sweep var(--duration-sweep) var(--ease) infinite;
+  background: var(--ink-2);
 }
 
-@keyframes sweep {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(340%);
-  }
+/* ---- toast ------------------------------------------------------------- */
+
+/* One live region, bottom end of the viewport. A copy or a check writes a short
+   line here; it fades in over 120ms and clears itself. */
+.toast-region {
+  position: fixed;
+  inset-block-end: var(--space-4);
+  inset-inline-end: var(--space-4);
+  z-index: 30;
+  display: grid;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+
+.toast {
+  min-block-size: var(--control-h-target);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-4);
+  background: var(--surface-2);
+  border: var(--border-hair) solid var(--line);
+  border-inline-start: var(--border-thick) solid var(--ok);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-overlay);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease);
+}
+
+.toast.is-in {
+  opacity: 1;
+}
+
+.toast.is-alert {
+  border-inline-start-color: var(--alert);
+}
+
+/* ---- control widths and block spacing ---------------------------------- */
+
+.control-xs,
+input.control-xs {
+  inline-size: var(--control-w-xs);
+}
+
+.control-sm,
+input.control-sm {
+  inline-size: var(--control-w-sm);
+}
+
+.control-md,
+input.control-md {
+  inline-size: var(--control-w-md);
+}
+
+.control-lg,
+input.control-lg {
+  inline-size: var(--control-w-lg);
+}
+
+.flush {
+  margin: 0;
+}
+
+.flush-top {
+  margin-block-start: 0;
+}
+
+.flush-bottom {
+  margin-block-end: 0;
+}
+
+.gap-above-3 {
+  margin-block-start: var(--space-3);
+}
+
+.gap-above-4 {
+  margin-block-start: var(--space-4);
+}
+
+.gap-above-5 {
+  margin-block-start: var(--space-5);
+}
+
+.gap-below-2 {
+  margin-block-end: var(--space-2);
+}
+
+.gap-below-3 {
+  margin-block-end: var(--space-3);
 }
 
 /* ---- responsive -------------------------------------------------------- */
+
+@media (pointer: coarse) { /* ds-allow-hardcode: a media query cannot read a custom property */
+  .button,
+  input[type="text"],
+  input[type="number"],
+  select {
+    block-size: var(--touch-h);
+  }
+
+  .run-tab,
+  .tab {
+    min-block-size: var(--touch-h);
+  }
+
+  tbody td {
+    block-size: var(--touch-h);
+  }
+}
 
 @media (max-width: 1099px) { /* ds-allow-hardcode: a media query cannot read a custom property */
   .grid-hero,
@@ -1391,8 +1711,10 @@ pre.source mark {
     border-inline-end: var(--border-hair) solid var(--line);
   }
 
-  /* With the script running, the preview leaves the flow and opens as a sheet
-     over the listing. Without it, the rule above keeps it below the listing. */
+  .summary-strip > div.group-break {
+    margin-inline-start: 0;
+  }
+
   .js .preview-column {
     display: none;
   }
@@ -1407,7 +1729,11 @@ pre.source mark {
     overscroll-behavior: contain;
     padding: 0 var(--space-3) var(--space-4);
     background: var(--ground);
-    box-shadow: var(--shadow-lift);
+  }
+
+  .js .preview-column.is-open > .card {
+    border-inline-start: 0;
+    padding-inline: 0;
   }
 
   .js .preview-column.is-open .sheet-bar {
@@ -1445,10 +1771,6 @@ pre.source mark {
 @media (max-width: 420px) { /* ds-allow-hardcode: a media query cannot read a custom property */
   .app-header {
     padding-inline: var(--space-3);
-  }
-
-  .display {
-    font-size: var(--text-xl);
   }
 }
 

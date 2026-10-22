@@ -1,8 +1,8 @@
 <div class="preview">
   <div class="preview-head">
-    <p class="quiet" style="margin: 0">Two versions</p>
+    <p class="quiet">Two versions</p>
     <h2 class="preview-name" tabindex="-1">{{ left.name }} against {{ right.name }}</h2>
-    {% if left.cluster %}<ul class="chips"><li class="chip is-signal">{{ left.cluster }}</li></ul>{% endif %}
+    {% if left.cluster %}<ul class="meta"><li>{{ left.cluster }}</li></ul>{% endif %}
   </div>
 
   <div class="hash-grid">

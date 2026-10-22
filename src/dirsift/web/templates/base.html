@@ -21,9 +21,12 @@
     DIRSIFT
   </a>
   <span class="quiet">someone left the lights on</span>
-  <nav class="app-nav" aria-label="Main">
-    <a href="/"{% block nav_dashboard %}{% endblock %}>dashboard</a>
-  </nav>
+  <div class="header-end">
+    {% block hints %}{% endblock %}
+    <nav class="app-nav" aria-label="Main">
+      <a href="/"{% block nav_dashboard %}{% endblock %}>dashboard</a>
+    </nav>
+  </div>
 </header>
 
 <main id="main">
@@ -50,5 +53,7 @@
     contents are shown raw, because the contents are the evidence.
   </p>
 </footer>
+
+<div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
 </body>
 </html>
