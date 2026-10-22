@@ -711,8 +711,11 @@ def test_a_refusal_page_escapes_what_it_quotes(tmp_path: Path):
         raise ScopeError("out of scope: http://x.test/<script>alert(1)</script>")
 
     page = TestClient(app).get("/boom").text
-    assert "<script>" not in page
-    assert "&lt;script&gt;" in page
+    # The refusal page now extends base.html, whose own shell carries script
+    # tags, so the check is on the quoted address, not any script tag: the
+    # listing's markup must come through escaped, never as a live element.
+    assert "<script>alert(1)</script>" not in page
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
 
 
 # -- the keyboard belongs to the page until the listing has focus ----------
@@ -1053,3 +1056,167 @@ def test_a_badge_and_the_strip_show_the_same_rounded_score(tmp_path: Path):
     badge = re.search(r'class="driver-badge">.*?</span>\s*(\d+)\s*</span>', row.group(0), re.S)
     assert in_strip and badge
     assert in_strip.group(1) == badge.group(1)
+
+
+# -- templated error and "gone" pages (N1) ---------------------------------
+#
+# Five return points used to answer with a bare body (a lone <h1>, or the single
+# word "gone") that failed axe on document-title, html-has-lang and the main
+# landmark. They now draw through base.html (the full pages) or land in a panel
+# the live page already knows how to show (the htmx fragments). These check the
+# wiring: the status code, which shape comes back, and the structure axe cared
+# about.
+
+
+def structural_error_page(html: str) -> None:
+    """What every full-page error inherits from base.html."""
+    assert '<html lang="en">' in html
+    assert "<main" in html
+    assert html.count("<h1") == 1
+    assert BACK_TO_DASHBOARD.search(html)
+
+
+def test_a_job_that_is_not_tracked_is_a_templated_full_page(tmp_path: Path):
+    """E1. A direct visit to a job the store never had, or lost on a restart."""
+    response = TestClient(create_app(tmp_path)).get("/jobs/does-not-exist")
+    assert response.status_code == 404
+    html = response.text
+    structural_error_page(html)
+    assert "<title>scan not found</title>" in html
+    assert "This scan is no longer tracked." in html
+    assert "no such job" not in html  # the bare page is gone
+
+
+def test_a_gone_job_status_stops_polling_and_points_at_the_dashboard(tmp_path: Path):
+    """E2. The polling box asks after the job is gone: a sentence, a link, and no
+    trigger, so the swap ends the polling instead of scheduling the next ask."""
+    response = TestClient(create_app(tmp_path)).get("/jobs/does-not-exist/status")
+    assert response.status_code == 404
+    body = response.text
+    assert "This scan is no longer tracked." in body
+    assert 'href="/"' in body
+    assert "hx-get" not in body  # no next poll is scheduled
+    assert "hx-trigger" not in body
+    assert body.strip() != "gone"  # the single word is gone
+    assert "<html" not in body  # a fragment, not a page
+
+
+def test_a_run_visited_directly_that_is_not_there_is_a_templated_full_page(tmp_path: Path):
+    """E3. No htmx header means the browser navigated to the run page itself."""
+    response = TestClient(create_app(tmp_path)).get("/runs/not-a-real-run")
+    assert response.status_code == 404
+    html = response.text
+    structural_error_page(html)
+    assert "<title>run not found</title>" in html
+    assert "No run by that name." in html
+    assert "no such run" not in html  # the bare page is gone
+
+
+def test_the_no_such_run_page_never_echoes_the_name(tmp_path: Path):
+    """A name that is not even a run name reaches the same page, and the hostile
+    value is never written into it (the body is fixed text)."""
+    client = TestClient(create_app(tmp_path))
+    for name in ("..%5Csecret-run", "%2E%2E%2Fsecret-run", "secret-run"):
+        response = client.get(f"/runs/{name}")
+        assert response.status_code == 404
+        assert "secret-run" not in response.text
+
+
+def test_a_run_gone_over_htmx_lands_in_a_preview_panel(tmp_path: Path):
+    """E4. A preview, a verdict or a compare fetched for a run that is not on disk
+    gets the preview-shaped panel (a sheet on a narrow screen), still a 404."""
+    client = TestClient(create_app(tmp_path))
+    hx = {"HX-Request": "true"}
+    calls = (
+        client.get("/runs/ghost/file", params={"url": "http://127.0.0.1:8080/x"}, headers=hx),
+        client.post("/runs/ghost/verdict", params={"url": "http://127.0.0.1:8080/x"}, headers=hx),
+        client.get(
+            "/runs/ghost/diff",
+            params={"a": "http://127.0.0.1:8080/x", "b": "http://127.0.0.1:8080/y"},
+            headers=hx,
+        ),
+    )
+    for response in calls:
+        assert response.status_code == 404
+        panel = response.text
+        assert 'class="preview"' in panel
+        assert re.search(r'<h2[^>]*class="preview-name"[^>]*>', panel)
+        assert "Run not found" in panel
+        assert 'href="/"' in panel
+        assert "<html" not in panel  # a fragment, not a page
+
+
+def test_the_same_missing_run_is_a_full_page_without_the_htmx_header(tmp_path: Path):
+    """E3 vs E4. The header is the only difference: panel over htmx, page without."""
+    client = TestClient(create_app(tmp_path))
+    params = {"url": "http://127.0.0.1:8080/x"}
+    over_htmx = client.get("/runs/ghost/file", params=params, headers={"HX-Request": "true"})
+    direct = client.get("/runs/ghost/file", params=params)
+    assert over_htmx.status_code == direct.status_code == 404
+    assert "preview-name" in over_htmx.text
+    assert "<html" not in over_htmx.text
+    structural_error_page(direct.text)
+    assert "No run by that name." in direct.text
+
+
+def test_a_refusal_is_a_templated_full_page_that_keeps_the_quote_escaped(tmp_path: Path):
+    """E5. The handler is kept for defence even though a scope error is caught in
+    the scan thread today, so this exercises it through a planted route."""
+    from dirsift.fetcher import ScopeError
+
+    app = create_app(tmp_path)
+
+    @app.get("/refuse")
+    def refuse():
+        raise ScopeError("out of scope: http://x.test/<script>alert(1)</script>")
+
+    response = TestClient(app).get("/refuse")
+    assert response.status_code == 400
+    html = response.text
+    structural_error_page(html)
+    assert "<title>refused</title>" in html
+    assert "That link was out of scope." in html
+    # The quoted address is escaped exactly once: the markup is shown, not run,
+    # and not turned into doubly-escaped entities.
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "&amp;lt;" not in html  # no double escape
+
+
+# -- the scan page keeps its live region through the swap (E6) --------------
+
+
+def start_a_failing_scan(client: TestClient) -> str:
+    """A scan of a loopback address fails fast; the job page is the return value."""
+    started = client.post(
+        "/scan", data={"url": "http://127.0.0.1:9/"}, follow_redirects=False
+    )
+    return started.headers["location"]
+
+
+def test_the_scan_page_keeps_the_live_region_outside_the_polling_element(tmp_path: Path):
+    """E6. The aria-live wrapper must not be the element that swaps, or the live
+    region leaves the DOM on the first poll and the later state is not announced."""
+    client = TestClient(create_app(tmp_path))
+    html = client.get(start_a_failing_scan(client)).text
+    wrapper = re.search(r'<div class="job-live"[^>]*>', html)
+    assert wrapper, "the scan page has no job-live wrapper"
+    assert 'aria-live="polite"' in wrapper.group(0)
+    assert "hx-get" not in wrapper.group(0)  # the wrapper itself never polls
+    inner = re.search(r'<div class="job-live"[^>]*>\s*(<div[^>]*>)', html, re.S)
+    assert inner and "hx-get" in inner.group(1)  # the poll lives inside it
+
+
+def test_a_finished_scan_status_does_not_schedule_another_poll(tmp_path: Path):
+    """E6. The failed branch of the status fragment carries no trigger, so the
+    polling stops once the scan is done (the same way the gone fragment does)."""
+    client = TestClient(create_app(tmp_path))
+    status_url = start_a_failing_scan(client) + "/status"
+    deadline = time.monotonic() + 5
+    body = client.get(status_url).text
+    while "failed" not in body and time.monotonic() < deadline:
+        time.sleep(0.05)
+        body = client.get(status_url).text
+    assert "failed" in body
+    assert "hx-get" not in body
+    assert "hx-trigger" not in body

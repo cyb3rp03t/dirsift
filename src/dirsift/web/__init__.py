@@ -116,6 +116,35 @@ HEX_COLUMNS = 16
 #: The sections of a run page, in tab order. The first is shown when none is asked for.
 RUN_TABS = ("files", "indicators", "families", "notes", "settings")
 
+#: The full-page error views. Each is rendered through error.html, which extends
+#: base.html, so the language, the title, a single h1 and the main landmark come
+#: from the shell rather than from a bare response. The quote is filled in only
+#: for a refusal, where it carries a URL a target's listing supplied.
+ERROR_NO_SUCH_JOB = {
+    "title": "scan not found",
+    "heading": "This scan is no longer tracked.",
+    "body": (
+        "Scans are tracked in memory while the console runs. This one has "
+        "finished, or the console restarted. Finished runs are on the dashboard."
+    ),
+}
+ERROR_NO_SUCH_RUN = {
+    "title": "run not found",
+    "heading": "No run by that name.",
+    "body": (
+        "This run is not in the runs folder. It may have been renamed or "
+        "removed. The dashboard lists every run on disk."
+    ),
+}
+ERROR_REFUSED = {
+    "title": "refused",
+    "heading": "That link was out of scope.",
+    "body": (
+        "A link in the listing pointed outside the scan's scope, so it was "
+        "not followed."
+    ),
+}
+
 
 def _hex_rows(head_hex: str | None) -> list[dict[str, str]]:
     """The first bytes as offset, hex pairs and printable ASCII.
@@ -267,6 +296,18 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             raise NoSuchRun(name) from exc
         return analyze(result)
 
+    def is_htmx(request: Request) -> bool:
+        """htmx marks its own requests, so a 404 from one of them can land in the
+        preview panel instead of replacing the whole page."""
+        return bool(request.headers.get("hx-request"))
+
+    def render_error(request: Request, context: dict, status_code: int):
+        """A full-page error, drawn through base.html so the language, the title,
+        the single h1 and the main landmark are there without a bare response."""
+        return templates.TemplateResponse(
+            request, "error.html", context, status_code=status_code
+        )
+
     def run_scan(job: Job, options: ScanOptions) -> None:
         def progress(event: str, detail: str) -> None:
             job.stage, job.detail = event, detail
@@ -355,14 +396,19 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     def job_page(request: Request, job_id: str):
         job = jobs.get(job_id)
         if job is None:
-            return HTMLResponse("<h1>no such job</h1>", status_code=404)
+            return render_error(request, ERROR_NO_SUCH_JOB, status_code=404)
         return templates.TemplateResponse(request, "job.html", {"job": job})
 
     @app.get("/jobs/{job_id}/status", response_class=HTMLResponse)
     def job_status(request: Request, job_id: str):
         job = jobs.get(job_id)
         if job is None:
-            return HTMLResponse("gone", status_code=404)
+            # The polling box asked after the job was gone (the console
+            # restarted). The fragment carries no trigger, so the swap stops the
+            # polling, and it lands in the live region so it is announced.
+            return templates.TemplateResponse(
+                request, "_status_gone.html", {}, status_code=404
+            )
         return templates.TemplateResponse(request, "_status.html", {"job": job})
 
     @app.get("/runs/{name}", response_class=HTMLResponse)
@@ -513,11 +559,23 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
 
     @app.exception_handler(NoSuchRun)
     def no_such_run(request: Request, exc: NoSuchRun):
-        return HTMLResponse("<h1>no such run</h1>", status_code=404)
+        # The same miss reaches here two ways: a preview, a verdict or a compare
+        # fetched over htmx (the panel lands in the preview, a sheet on a narrow
+        # screen), or a direct visit to the run page. The name is never echoed,
+        # so a name that is not a run name reads the same as one that is gone.
+        if is_htmx(request):
+            return templates.TemplateResponse(
+                request, "_gone_run.html", {}, status_code=404
+            )
+        return render_error(request, ERROR_NO_SUCH_RUN, status_code=404)
 
     @app.exception_handler(ScopeError)
     def scope_error(request: Request, exc: ScopeError):
         # The message quotes a URL a target's listing supplied: hostile input.
-        return HTMLResponse(f"<h1>refused</h1><p>{escape(str(exc))}</p>", status_code=400)
+        # It is passed raw; the template's autoescape quotes it once, so there is
+        # no second escape to turn the markup back into visible text twice.
+        return render_error(
+            request, {**ERROR_REFUSED, "quote": str(exc)}, status_code=400
+        )
 
     return app

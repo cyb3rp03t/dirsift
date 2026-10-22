@@ -343,6 +343,29 @@ main p:not(.display):not(.button-row) {
   border-color: var(--line-strong);
 }
 
+/* A templated error page (scan, run or scope not found): one card that stacks a
+   heading, a plain notice and an optional quoted value, spaced by the grid gap
+   rather than per element margins. */
+.error-card {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.error-card > * {
+  margin: 0;
+}
+
+/* The scan page live region. The wrapper is permanent and holds aria-live; the
+   element inside it is what htmx swaps as the status polls, so the live region
+   stays in the DOM and each update is announced. */
+.job-live {
+  margin-block-start: var(--space-5);
+}
+
+.job-live > div > p:only-child {
+  margin: 0;
+}
+
 .grid {
   display: grid;
   gap: var(--space-4);
@@ -1134,6 +1157,10 @@ table.listing td.data {
 .preview-head {
   display: grid;
   gap: var(--space-2);
+}
+
+.preview-head p {
+  margin: 0;
 }
 
 .preview-name {
