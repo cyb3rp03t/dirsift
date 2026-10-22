@@ -193,7 +193,7 @@ def _folder(entry: Entry) -> str:
     return path.rsplit("/", 1)[0] + "/"
 
 
-def _internal(address: str) -> bool | None:
+def internal_address(address: str) -> bool | None:
     """True for an address no engine indexes, None for something not an address."""
     try:
         ip = ipaddress.ip_address(address)
@@ -457,7 +457,7 @@ def _host(result: ScanResult, out: _Collector) -> None:
     together, and a great deal else.
     """
     host = urlparse(result.root_url).hostname or ""
-    if _internal(host) is None and host:
+    if internal_address(host) is None and host:
         out.add(
             [("host", host)],
             basis="host",
@@ -465,8 +465,8 @@ def _host(result: ScanResult, out: _Collector) -> None:
             reason="the target's own name finds every port the engines saw under it",
             sources=["root_url"],
         )
-    address = result.target_ip or (host if _internal(host) is not None else "")
-    internal = _internal(address) if address else None
+    address = result.target_ip or (host if internal_address(host) is not None else "")
+    internal = internal_address(address) if address else None
     if internal is None:
         return
     if internal:
@@ -506,7 +506,7 @@ def _indicators(result: ScanResult, out: _Collector) -> None:
     for ioc in result.iocs:
         if ioc.ioc_type == "ipv4":
             address = ioc.value.split(":", 1)[0]
-            if _internal(address):
+            if internal_address(address):
                 skipped += 1
                 continue
             terms = [("ip", address)]
