@@ -6,107 +6,207 @@
 {% set ioc_max = ioc_types[0][1] if ioc_types else 1 %}
 {% set hashed = result.files | selectattr("sha256") | list %}
 
-<div class="grid grid-hero">
-  <section class="card card-hero" aria-labelledby="target-title">
-    <p class="quiet" id="target-title" style="margin: 0 0 var(--space-2)">Target</p>
-    <h1 class="display data" style="margin: 0">{{ result.root_url | defang }}</h1>
-    {% if result.target_ip %}
-    <p class="quiet data" style="margin: var(--space-2) 0 0">
-      resolved to {{ result.target_ip | defang }}
-      {% if result.target_asn %}
-      <span class="chip">AS{{ result.target_asn }}{% if result.target_as_name %} {{ result.target_as_name }}{% endif %}</span>
-      {% if result.target_country %}<span class="chip">{{ result.target_country }}</span>{% endif %}
-      {% endif %}
-    </p>
-    {% endif %}
+{#- A value the run does not have reads "none", never a lone dash. -#}
+{% macro value(text) -%}
+  {%- if text is none or text == "" -%}<span class="none">none</span>{%- else -%}{{ text }}{%- endif -%}
+{%- endmacro %}
 
-    <ul class="chips" style="margin-block-start: var(--space-4)">
-      <li class="chip is-signal">{{ result.listing_flavor or "unknown index" }}</li>
-      <li class="chip">{{ result.server or "no server header" }}</li>
-      <li class="chip">{{ result.requests_made }} requests</li>
-      <li class="chip">{{ result.bytes_fetched | human_size }} read</li>
-      {% if result.errors %}<li class="chip is-warn">{{ result.errors | length }} notes</li>{% endif %}
-    </ul>
-
-    {% if not result.entries %}
-    <div class="notice {% if not (result.listing_flavor and result.listing_flavor != 'generic') %}is-warn{% endif %}"
-         style="margin-block-start: var(--space-4)">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path>
-      </svg>
-      {% if result.listing_flavor and result.listing_flavor != "generic" %}
-      <p>
-        The server answered with a directory index, but the index lists nothing.
-        The scan worked; there is nothing here to triage.
-      </p>
-      {% elif result.errors %}
-      <p>Nothing was listed. The notes at the bottom of this page say why.</p>
-      {% else %}
-      <p>Nothing was listed.</p>
-      {% endif %}
-    </div>
-    {% endif %}
-
-    <p class="button-row" style="margin-block: var(--space-5) 0">
+<section class="run-summary" aria-labelledby="run-title">
+  <div class="run-summary-head">
+    <h1 class="run-title data" id="run-title">{{ result.root_url | defang }}</h1>
+    <p class="run-exports">
       <a href="/runs/{{ name }}/report.md">markdown report</a>
       <a href="/runs/{{ name }}/iocs.txt">indicators</a>
       <a href="/runs/{{ name }}/hashes.txt">hashes</a>
     </p>
-  </section>
+  </div>
+  <dl class="summary-strip">
+    <div><dt>address</dt><dd>{{ value(result.target_ip | defang if result.target_ip else none) }}</dd></div>
+    <div><dt>network</dt><dd>
+      {%- if result.target_asn -%}
+        AS{{ result.target_asn }}{% if result.target_as_name %} {{ result.target_as_name }}{% endif %}
+      {%- else -%}{{ value(none) }}{%- endif -%}
+    </dd></div>
+    <div><dt>country</dt><dd>{{ value(result.target_country) }}</dd></div>
+    <div><dt>index</dt><dd>{{ value(result.listing_flavor) }}</dd></div>
+    <div><dt>server</dt><dd>{{ value(result.server) }}</dd></div>
+    <div><dt>requests</dt><dd>{{ result.requests_made }}</dd></div>
+    <div><dt>read</dt><dd>{{ result.bytes_fetched | human_size }}</dd></div>
+    <div><dt>files</dt><dd>{{ result.files | length }}</dd></div>
+    <div><dt>directories</dt><dd>{{ result.dirs | length }}</dd></div>
+    <div><dt>indicators</dt><dd>{{ result.iocs | length }}</dd></div>
+    <div><dt>families</dt><dd>{{ result.clusters | length }}</dd></div>
+    <div><dt>hashed</dt><dd>{{ hashed | length }}</dd></div>
+    <div><dt>notes</dt><dd>{{ result.errors | length }}</dd></div>
+  </dl>
 
-  <div class="grid grid-tiles-2" role="group" aria-label="This run in numbers">
-    <div class="tile">
-      <span class="label">Files</span>
-      <span class="value">{{ result.files | length }}</span>
-      <span class="note">{{ result.dirs | length }} directories</span>
+  {% if not result.entries %}
+  <div class="notice {% if not (result.listing_flavor and result.listing_flavor != 'generic') %}is-warn{% endif %}">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path>
+    </svg>
+    {% if result.listing_flavor and result.listing_flavor != "generic" %}
+    <p>
+      The server answered with a directory index, but the index lists nothing.
+      The scan worked; there is nothing here to triage.
+    </p>
+    {% elif result.errors %}
+    <p>Nothing was listed. The <a href="#notes" data-tab-link="notes">notes</a> say why.</p>
+    {% else %}
+    <p>Nothing was listed.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+<nav class="run-tabs" data-run-tabs aria-label="Parts of this run">
+  <div class="run-tabs-list" data-run-tablist>
+    {% for key, label, count in [
+         ("files", "Files", result.files | length),
+         ("indicators", "Indicators", result.iocs | length),
+         ("families", "Families", result.clusters | length),
+         ("notes", "Notes", result.errors | length),
+         ("settings", "Run settings", none),
+       ] %}
+    <a class="run-tab{% if tab == key %} is-current{% endif %}" href="#{{ key }}"
+       id="run-tab-{{ key }}" data-tab="{{ key }}">
+      {{- label }}{% if count is not none %} <span class="count">{{ count }}</span>{% endif -%}
+    </a>
+    {% endfor %}
+  </div>
+</nav>
+
+<section class="run-panel{% if tab == 'files' %} is-current{% endif %}" id="files" aria-labelledby="files-title">
+  <h2 class="section-title run-panel-title" id="files-title">
+    Listing <span class="count">{{ entries | length }} entries</span>
+  </h2>
+  <div class="workspace">
+    <div class="workbench-main">
+      {% if result.files %}
+      <div class="drivers">
+        <h3 class="drivers-title" id="drivers-title">Likely drivers</h3>
+        {% if candidates %}
+        <ol class="drivers-list" data-drivers aria-labelledby="drivers-title">
+          {% for candidate in candidates[:3] %}
+          <li class="driver">
+            <span class="driver-score"><span class="visually-hidden">score </span>{{ candidate.score | round(0) | int }}</span>
+            <button type="button" class="link-button"
+                    data-file-url="{{ candidate.entry.url }}"
+                    hx-get="/runs/{{ name }}/file?url={{ candidate.entry.url | urlencode }}"
+                    hx-target="#preview" hx-swap="innerHTML">{{ candidate.entry.name }}</button>
+            <span class="driver-why">{{ candidate.reasons | join("; ") }}</span>
+          </li>
+          {% endfor %}
+        </ol>
+        {% else %}
+        <p class="empty">Nothing here reads like a driver for the rest.</p>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <form class="card card-tight" data-listing method="post" action="/runs/{{ name }}/yara"
+            hx-post="/runs/{{ name }}/yara" hx-target="#preview" hx-swap="innerHTML">
+        <div class="scroll-region is-tall" tabindex="0" role="region" aria-label="Full directory listing">
+          <table class="listing">
+            <thead>
+              <tr>
+                <th>pick</th><th>path</th><th>type</th><th class="num">size</th>
+                <th>sha256</th><th>modified</th><th>family</th>
+              </tr>
+            </thead>
+            <tbody data-listing-rows>
+              {% for entry in entries %}
+              <tr{% if preview and preview.entry.url == entry.url %} class="is-selected"{% endif %}>
+                <td>
+                  {%- if not entry.is_dir %}
+                  <input type="checkbox" name="pick" value="{{ entry.url }}"
+                         aria-label="Pick {{ entry.name }} for a rule">
+                  {%- endif %}
+                </td>
+                <td class="data">
+                  {% if entry.is_dir %}
+                    <span class="quiet">{{ entry.name }}/</span>
+                  {% else %}
+                    <button type="button" class="link-button{% if preview and preview.entry.url == entry.url %} is-selected{% endif %}"
+                            data-file-url="{{ entry.url }}"
+                            hx-get="/runs/{{ name }}/file?url={{ entry.url | urlencode }}"
+                            hx-target="#preview" hx-swap="innerHTML">{{ entry.name }}</button>
+                    {%- if entry.url in driver_scores %}
+                    <span class="driver-badge"><span class="visually-hidden">driver score </span>{{ driver_scores[entry.url] }}</span>
+                    {%- endif %}
+                    {%- if entry.verdict and entry.verdict.found and entry.verdict.malicious %}
+                    <span class="chip is-alert">{{ entry.verdict.malicious }}/{{ entry.verdict.total }}</span>
+                    {%- elif entry.verdict and entry.verdict.found %}
+                    <span class="chip is-good">{{ entry.verdict.malicious }}/{{ entry.verdict.total }}</span>
+                    {%- endif %}
+                  {% endif %}
+                </td>
+                <td class="quiet">
+                  {{- "dir" if entry.is_dir else entry.kind }}
+                  {%- if mismatches.get(entry.url) %}
+                  <span class="chip is-warn" title="{{ mismatches[entry.url] }}">mismatch</span>
+                  {%- endif %}
+                </td>
+                <td class="num quiet">{{ (entry.size or entry.fetched_bytes) | human_size }}</td>
+                <td class="quiet mono-sm nowrap">
+                  {%- if entry.sha256 %}{{ entry.sha256 }}
+                  {%- elif entry.truncated %}partial
+                  {%- elif not entry.is_dir %}-
+                  {%- endif %}
+                </td>
+                <td class="quiet nowrap">{{ entry.modified or "-" }}</td>
+                <td class="quiet">{{ entry.cluster or "" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p class="scroll-hint">
+          The table scrolls sideways inside this box. Press j and k to walk the files
+          from the keyboard.
+        </p>
+        <div class="button-row">
+          <button class="button is-quiet" type="submit">Build a YARA rule</button>
+          <span class="quiet">
+            From the files you pick. Author cyb3rp03t, and the rule says it was built
+            from a bounded read.
+          </span>
+        </div>
+      </form>
     </div>
-    <div class="tile">
-      <span class="label">Indicators</span>
-      <span class="value {% if not result.iocs %}is-quiet{% endif %}">{{ result.iocs | length }}</span>
-      <span class="note">defanged on the way out</span>
-    </div>
-    <div class="tile">
-      <span class="label">Families</span>
-      <span class="value {% if not result.clusters %}is-quiet{% endif %}">{{ result.clusters | length }}</span>
-      <span class="note">names that differ by a version</span>
-    </div>
-    <div class="tile">
-      <span class="label">Hashed</span>
-      <span class="value">{{ hashed | length }}</span>
-      <span class="note">read whole, sha256 and md5</span>
+
+    <div class="preview-column" id="preview-sheet" data-sheet>
+      <div class="sheet-bar">
+        <button type="button" class="button is-quiet" data-sheet-close>Back to files</button>
+        <span class="quiet">or press Esc</span>
+      </div>
+      <div class="card" id="preview" aria-live="polite">
+        {% if preview %}
+          {% with entry = preview.entry, mismatch = preview.mismatch, iocs = preview.iocs,
+                  referenced_by = preview.referenced_by, siblings = preview.siblings,
+                  hex_rows = preview.hex_rows, source_html = preview.source_html,
+                  verdict_ready = preview.verdict_ready, note = preview.note %}
+            {% include "_file.html" %}
+          {% endwith %}
+        {% else %}
+        <h2 class="section-title" style="margin-block-start: 0">Preview</h2>
+        <p class="empty">
+          Pick a file from the listing. Contents come from the saved run, so
+          opening one here sends nothing to the target.
+        </p>
+        <p class="empty">
+          An open file shows its sha256 and md5 with a button that asks a public
+          scanner about the hash, the first bytes as hex, the indicators found in
+          it, the files that name it, and the other versions in its family.
+        </p>
+        {% endif %}
+      </div>
     </div>
   </div>
-</div>
 
-<div class="grid grid-thirds" style="margin-block-start: var(--space-5)">
-  <section class="card" aria-labelledby="drivers-title">
-    <h2 class="section-title" id="drivers-title" style="margin-block-start: 0">
-      What drives the rest
-    </h2>
-    {% if candidates %}
-      {% for candidate in candidates %}
-      <div class="candidate">
-        <div class="candidate-head">
-          <span class="candidate-score">{{ candidate.score | round(0) | int }}</span>
-          <button type="button" class="link-button"
-                  data-file-url="{{ candidate.entry.url }}"
-                  hx-get="/runs/{{ name }}/file?url={{ candidate.entry.url | urlencode }}"
-                  hx-target="#preview" hx-swap="innerHTML">{{ candidate.entry.name }}</button>
-        </div>
-        <div class="bar-track" aria-hidden="true">
-          <span class="bar-fill" style="inline-size: {{ candidate.score if candidate.score <= 100 else 100 }}%"></span>
-        </div>
-        <p class="candidate-why">{{ candidate.reasons | join("; ") }}</p>
-      </div>
-      {% endfor %}
-    {% else %}
-      <p class="empty">Nothing here reads like a driver for the rest.</p>
-    {% endif %}
-  </section>
-
-  <section class="card" aria-labelledby="inventory-title">
-    <h2 class="section-title" id="inventory-title" style="margin-block-start: 0">Inventory</h2>
+  <div class="inventory" aria-labelledby="inventory-title">
+    <h3 class="section-title" id="inventory-title">Inventory</h3>
     {% if by_kind %}
     <div class="bars">
       {% for kind, items in by_kind %}
@@ -119,21 +219,23 @@
       </div>
       {% endfor %}
     </div>
-    <p class="quiet" style="margin-block-end: 0">
+    <p class="scroll-hint">
       Type comes from the first bytes, and falls back to the extension only when
       nothing was read.
     </p>
     {% else %}
     <p class="empty">No files were listed.</p>
     {% endif %}
-  </section>
+  </div>
+</section>
 
-  <section class="card" aria-labelledby="indicators-title">
-    <h2 class="section-title" id="indicators-title" style="margin-block-start: 0">
-      Indicators <span class="count">{{ result.iocs | length }}</span>
-    </h2>
+<section class="run-panel{% if tab == 'indicators' %} is-current{% endif %}" id="indicators" aria-labelledby="indicators-title">
+  <h2 class="section-title run-panel-title" id="indicators-title">
+    Indicators <span class="count">{{ result.iocs | length }}</span>
+  </h2>
+  <div class="card card-tight">
     {% if ioc_types %}
-    <div class="bars" style="margin-block-end: var(--space-4)">
+    <div class="bars bars-spaced">
       {% for ioc_type, count in ioc_types %}
       <div class="bar-row">
         <span class="bar-label">{{ ioc_type }}</span>
@@ -144,7 +246,7 @@
       </div>
       {% endfor %}
     </div>
-    <div class="scroll-region is-mid" tabindex="0" role="region" aria-label="Every indicator in this run">
+    <div class="scroll-region is-tall" tabindex="0" role="region" aria-label="Every indicator in this run">
       <table>
         <tbody>
           {% for ioc in result.iocs %}
@@ -171,168 +273,88 @@
       address is a guess.
     </p>
     {% endif %}
-  </section>
-</div>
-
-{% if result.clusters %}
-<h2 class="section-title">Version families <span class="count">{{ result.clusters | length }}</span></h2>
-<div class="card card-tight">
-  <div class="scroll-region is-mid" tabindex="0" role="region" aria-label="Version families">
-    <table>
-      <thead>
-        <tr><th>family</th><th>variants</th><th class="num">files</th><th>members</th></tr>
-      </thead>
-      <tbody>
-        {% for cluster in result.clusters %}
-        <tr>
-          <td class="data">{{ cluster.label }}</td>
-          <td class="quiet">{{ cluster.variants | join(", ") }}</td>
-          <td class="num">{{ cluster.members | length }}</td>
-          <td class="quiet data">{{ cluster.members | join(", ") }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
   </div>
-</div>
-{% endif %}
+</section>
 
-<h2 class="section-title">Listing <span class="count">{{ entries | length }} entries</span></h2>
-<div class="workspace">
-  <form class="card card-tight" data-listing method="post" action="/runs/{{ name }}/yara"
-        hx-post="/runs/{{ name }}/yara" hx-target="#preview" hx-swap="innerHTML">
-    <div class="scroll-region is-tall" tabindex="0" role="region" aria-label="Full directory listing">
-      <table class="listing">
+<section class="run-panel{% if tab == 'families' %} is-current{% endif %}" id="families" aria-labelledby="families-title">
+  <h2 class="section-title run-panel-title" id="families-title">
+    Version families <span class="count">{{ result.clusters | length }}</span>
+  </h2>
+  <div class="card card-tight">
+    {% if result.clusters %}
+    <div class="scroll-region is-mid" tabindex="0" role="region" aria-label="Version families">
+      <table>
         <thead>
-          <tr>
-            <th>pick</th><th>path</th><th>type</th><th class="num">size</th>
-            <th>sha256</th><th>modified</th><th>family</th>
-          </tr>
+          <tr><th>family</th><th>variants</th><th class="num">files</th><th>members</th></tr>
         </thead>
         <tbody>
-          {% for entry in entries %}
-          <tr{% if preview and preview.entry.url == entry.url %} class="is-selected"{% endif %}>
-            <td>
-              {%- if not entry.is_dir %}
-              <input type="checkbox" name="pick" value="{{ entry.url }}"
-                     aria-label="Pick {{ entry.name }} for a rule">
-              {%- endif %}
-            </td>
-            <td class="data">
-              {% if entry.is_dir %}
-                <span class="quiet">{{ entry.name }}/</span>
-              {% else %}
-                <button type="button" class="link-button{% if preview and preview.entry.url == entry.url %} is-selected{% endif %}"
-                        data-file-url="{{ entry.url }}"
-                        hx-get="/runs/{{ name }}/file?url={{ entry.url | urlencode }}"
-                        hx-target="#preview" hx-swap="innerHTML">{{ entry.name }}</button>
-                {%- if entry.verdict and entry.verdict.found and entry.verdict.malicious %}
-                <span class="chip is-alert">{{ entry.verdict.malicious }}/{{ entry.verdict.total }}</span>
-                {%- elif entry.verdict and entry.verdict.found %}
-                <span class="chip is-good">{{ entry.verdict.malicious }}/{{ entry.verdict.total }}</span>
-                {%- endif %}
-              {% endif %}
-            </td>
-            <td class="quiet">
-              {{- "dir" if entry.is_dir else entry.kind }}
-              {%- if mismatches.get(entry.url) %}
-              <span class="chip is-warn" title="{{ mismatches[entry.url] }}">mismatch</span>
-              {%- endif %}
-            </td>
-            <td class="num quiet">{{ (entry.size or entry.fetched_bytes) | human_size }}</td>
-            <td class="quiet mono-sm nowrap">
-              {%- if entry.sha256 %}{{ entry.sha256 }}
-              {%- elif entry.truncated %}partial
-              {%- elif not entry.is_dir %}-
-              {%- endif %}
-            </td>
-            <td class="quiet nowrap">{{ entry.modified or "-" }}</td>
-            <td class="quiet">{{ entry.cluster or "" }}</td>
+          {% for cluster in result.clusters %}
+          <tr>
+            <td class="data">{{ cluster.label }}</td>
+            <td class="quiet">{{ cluster.variants | join(", ") }}</td>
+            <td class="num">{{ cluster.members | length }}</td>
+            <td class="quiet data">{{ cluster.members | join(", ") }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-    <p class="scroll-hint">
-      The table scrolls sideways inside this box. Press j and k to walk the files
-      from the keyboard.
-    </p>
-    <div class="button-row">
-      <button class="button is-quiet" type="submit">Build a YARA rule</button>
-      <span class="quiet">
-        From the files you pick. Author cyb3rp03t, and the rule says it was built
-        from a bounded read.
-      </span>
-    </div>
-  </form>
-
-  <div class="preview-column">
-    <div class="card" id="preview" aria-live="polite">
-      {% if preview %}
-        {% with entry = preview.entry, mismatch = preview.mismatch, iocs = preview.iocs,
-                referenced_by = preview.referenced_by, siblings = preview.siblings,
-                hex_rows = preview.hex_rows, source_html = preview.source_html,
-                verdict_ready = preview.verdict_ready, note = preview.note %}
-          {% include "_file.html" %}
-        {% endwith %}
-      {% else %}
-      <h2 class="section-title" style="margin-block-start: 0">Preview</h2>
-      <p class="empty">
-        Pick a file from the listing. Contents come from the saved run, so
-        opening one here sends nothing to the target.
-      </p>
-      <p class="empty">
-        An open file shows its sha256 and md5 with a button that asks a public
-        scanner about the hash, the first bytes as hex, the indicators found in
-        it, the files that name it, and the other versions in its family.
-      </p>
-      {% endif %}
-    </div>
+    {% else %}
+    <p class="empty">No two names here differ only by a version.</p>
+    {% endif %}
   </div>
-</div>
+</section>
 
-{% if result.errors %}
-<h2 class="section-title">Notes and errors <span class="count">{{ result.errors | length }}</span></h2>
-<div class="card card-tight">
-  <div class="scroll-region is-mid" tabindex="0" role="region" aria-label="Scan notes and errors">
-    <table>
-      <thead><tr><th>stage</th><th>url</th><th>detail</th></tr></thead>
-      <tbody>
-        {% for error in result.errors %}
-        {% set meaning = error.detail | explain %}
-        <tr>
-          <td class="quiet">{{ error.stage }}</td>
-          <td class="data">{{ error.url | defang }}</td>
-          <td>
-            {{ error.detail }}
-            {% if meaning %}
-            <details class="why">
-              <summary aria-label="What this note means">
-                <span aria-hidden="true">i</span>
-                <span class="why-label">what this means</span>
-              </summary>
-              <p>{{ meaning }}</p>
-            </details>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<section class="run-panel{% if tab == 'notes' %} is-current{% endif %}" id="notes" aria-labelledby="notes-title">
+  <h2 class="section-title run-panel-title" id="notes-title">
+    Notes and errors <span class="count">{{ result.errors | length }}</span>
+  </h2>
+  <div class="card card-tight">
+    {% if result.errors %}
+    <div class="scroll-region is-tall" tabindex="0" role="region" aria-label="Scan notes and errors">
+      <table>
+        <thead><tr><th>stage</th><th>url</th><th>detail</th></tr></thead>
+        <tbody>
+          {% for error in result.errors %}
+          {% set meaning = error.detail | explain %}
+          <tr>
+            <td class="quiet">{{ error.stage }}</td>
+            <td class="data">{{ error.url | defang }}</td>
+            <td>
+              {{ error.detail }}
+              {% if meaning %}
+              <details class="why">
+                <summary aria-label="What this note means">
+                  <span aria-hidden="true">i</span>
+                  <span class="why-label">what this means</span>
+                </summary>
+                <p>{{ meaning }}</p>
+              </details>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty">The scan wrote no notes: nothing it asked for went wrong.</p>
+    {% endif %}
   </div>
-</div>
-{% endif %}
+</section>
 
-<h2 class="section-title">How this run was taken</h2>
-<div class="card card-tight">
-  <ul class="chips">
-    <li class="chip">depth {{ result.options.get("depth", "-") }}</li>
-    <li class="chip">delay {{ result.options.get("delay", "-") }}s</li>
-    <li class="chip">read heads: {{ "yes" if result.options.get("peek") else "no" }}</li>
-    <li class="chip">peek ceiling {{ result.options.get("peek_bytes", 0) | human_size }}</li>
-    <li class="chip">private targets: {{ "allowed" if result.options.get("allow_private") else "refused" }}</li>
-    <li class="chip">started {{ result.started_at.strftime("%Y-%m-%d %H:%M") }}</li>
-  </ul>
-</div>
+<section class="run-panel{% if tab == 'settings' %} is-current{% endif %}" id="settings" aria-labelledby="settings-title">
+  <h2 class="section-title run-panel-title" id="settings-title">How this run was taken</h2>
+  <div class="card card-tight">
+    <dl class="settings-list">
+      <div><dt>depth</dt><dd>{{ value(result.options.get("depth")) }}</dd></div>
+      <div><dt>delay</dt><dd>{% if result.options.get("delay") is not none %}{{ result.options.get("delay") }}s{% else %}{{ value(none) }}{% endif %}</dd></div>
+      <div><dt>read heads</dt><dd>{{ "yes" if result.options.get("peek") else "no" }}</dd></div>
+      <div><dt>peek ceiling</dt><dd>{{ result.options.get("peek_bytes", 0) | human_size }}</dd></div>
+      <div><dt>private targets</dt><dd>{{ "allowed" if result.options.get("allow_private") else "refused" }}</dd></div>
+      <div><dt>started</dt><dd>{{ result.started_at.strftime("%Y-%m-%d %H:%M") }}</dd></div>
+    </dl>
+  </div>
+</section>
 
 {% endblock %}

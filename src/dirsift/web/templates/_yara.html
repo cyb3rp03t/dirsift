@@ -1,9 +1,9 @@
 <div class="preview">
   <div class="preview-head">
     <p class="quiet" style="margin: 0">Rule</p>
-    <p class="preview-name" style="margin: 0">
+    <h2 class="preview-name" tabindex="-1">
       {% if picked %}{{ picked | length }} file{{ "" if picked | length == 1 else "s" }} selected{% else %}Nothing selected{% endif %}
-    </p>
+    </h2>
     {% if picked %}
     <ul class="chips">
       {% for entry in picked %}<li class="chip">{{ entry.name }}</li>{% endfor %}

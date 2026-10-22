@@ -113,6 +113,9 @@ PICKED_IN_QUERY = Query(default=[])
 #: Bytes per row in the hex view.
 HEX_COLUMNS = 16
 
+#: The sections of a run page, in tab order. The first is shown when none is asked for.
+RUN_TABS = ("files", "indicators", "families", "notes", "settings")
+
 
 def _hex_rows(head_hex: str | None) -> list[dict[str, str]]:
     """The first bytes as offset, hex pairs and printable ASCII.
@@ -363,10 +366,13 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
         return templates.TemplateResponse(request, "_status.html", {"job": job})
 
     @app.get("/runs/{name}", response_class=HTMLResponse)
-    def run_page(request: Request, name: str, file: str | None = None):
+    def run_page(
+        request: Request, name: str, file: str | None = None, tab: str | None = None
+    ):
         result, candidates = load_run(name)
         entries = sorted(result.entries, key=lambda e: (e.depth, not e.is_dir, e.name))
         opened = next((e for e in result.entries if e.url == file), None) if file else None
+        drivers = [c for c in candidates if c.score > 0]
         ioc_types: dict[str, int] = {}
         for ioc in result.iocs:
             ioc_types[ioc.ioc_type] = ioc_types.get(ioc.ioc_type, 0) + 1
@@ -376,7 +382,11 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             {
                 "name": name,
                 "result": result,
-                "candidates": [c for c in candidates if c.score > 0][:6],
+                "tab": tab if tab in RUN_TABS else RUN_TABS[0],
+                "candidates": drivers[:6],
+                # Every scored file, for the badge on its listing row. The strip
+                # shows a short list; the badges are not held to it.
+                "driver_scores": {c.entry.url: int(round(c.score)) for c in drivers},
                 "entries": entries,
                 "by_kind": sorted(result.by_kind().items(), key=lambda kv: -len(kv[1])),
                 "ioc_types": sorted(ioc_types.items(), key=lambda kv: -kv[1]),
@@ -389,12 +399,20 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             },
         )
 
+    def not_in_run(request: Request, name: str, url: str):
+        """The panel a preview, a verdict or a comparison gets for a file the run
+        never listed. It lands in the preview (a sheet on a narrow screen), so it
+        reads like one: a heading, the address, a way back. Still a 404."""
+        return templates.TemplateResponse(
+            request, "_missing.html", {"name": name, "url": url}, status_code=404
+        )
+
     @app.get("/runs/{name}/file", response_class=HTMLResponse)
     def file_preview(request: Request, name: str, url: str):
         result, _ = load_run(name)
         entry = next((e for e in result.entries if e.url == url), None)
         if entry is None:
-            return HTMLResponse("<p>not in this run</p>", status_code=404)
+            return not_in_run(request, name, url)
         return templates.TemplateResponse(request, "_file.html", _preview(result, entry, name))
 
     @app.post("/runs/{name}/verdict", response_class=HTMLResponse)
@@ -403,7 +421,7 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
         result, _ = load_run(name)
         entry = next((e for e in result.entries if e.url == url), None)
         if entry is None:
-            return HTMLResponse("<p>not in this run</p>", status_code=404)
+            return not_in_run(request, name, url)
 
         note = None
         if not entry.sha256:
@@ -461,7 +479,7 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
         left = next((e for e in result.entries if e.url == a), None)
         right = next((e for e in result.entries if e.url == b), None)
         if left is None or right is None:
-            return HTMLResponse("<p>not in this run</p>", status_code=404)
+            return not_in_run(request, name, a if left is None else b)
         return templates.TemplateResponse(
             request,
             "_diff.html",

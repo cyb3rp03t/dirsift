@@ -713,3 +713,320 @@ def test_a_refusal_page_escapes_what_it_quotes(tmp_path: Path):
     page = TestClient(app).get("/boom").text
     assert "<script>" not in page
     assert "&lt;script&gt;" in page
+
+
+# -- the keyboard belongs to the page until the listing has focus ----------
+
+STATIC = Path(__file__).resolve().parents[1] / "src" / "dirsift" / "web" / "static"
+
+
+def keydown_walker() -> str:
+    """The listing walker in dirsift.js, from its comment to the next block."""
+    script = (STATIC / "dirsift.js").read_text(encoding="utf-8")
+    start = script.index("/* Walk the listing")
+    end = script.index("/*", start + 2)
+    return script[start:end]
+
+
+def test_the_listing_rows_carry_the_hook_the_keyboard_walker_reads(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    rows = re.search(r"<tbody[^>]*data-listing-rows[^>]*>(.*?)</tbody>", page, re.S)
+    assert rows, "the listing body is not marked for the keyboard walker"
+    assert 'data-file-url="http://127.0.0.1:8080/install.bat"' in rows.group(1)
+
+
+def test_the_arrow_keys_are_left_alone_outside_the_listing():
+    """Arrow keys scroll the page. Only focus inside the listing rows walks them."""
+    walker = keydown_walker()
+    assert "closest(\"[data-listing-rows]\")" in walker
+    # The old walker jumped to the first file from anywhere on the page.
+    assert "index === -1 ? 0" not in walker
+
+
+# -- the preview as a sheet on a narrow screen -----------------------------
+
+
+def test_the_preview_sits_in_a_sheet_that_says_how_to_get_back(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    sheet = re.search(r"<div[^>]*data-sheet[^>]*>(.*)", page, re.S)
+    assert sheet, "the preview column is not marked as a sheet"
+    close = r"<button[^>]*data-sheet-close[^>]*>\s*Back to files\s*</button>"
+    assert re.search(close, sheet.group(1))
+    assert 'id="preview"' in sheet.group(1)
+
+
+def test_the_open_file_names_itself_in_a_heading_focus_can_land_on(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    panel = preview_of(TestClient(create_app(tmp_path)), name, "http://127.0.0.1:8080/install.bat")
+    heading = re.search(r"<h2[^>]*class=\"preview-name\"[^>]*>(.*?)</h2>", panel, re.S)
+    assert heading, "the file name is not a heading"
+    assert 'tabindex="-1"' in heading.group(0)
+    assert "install.bat" in heading.group(1)
+
+
+def test_without_script_the_sheet_stays_in_the_page(tmp_path: Path):
+    """The sheet only exists once the script has said it runs. A page opened with
+    ?file= and no script shows the preview where it is, in the normal flow."""
+    page = TestClient(create_app(tmp_path)).get("/").text
+    head = page.split("</head>", 1)[0]
+    assert 'document.documentElement.classList.add("js")' in head
+    css = (STATIC / "dirsift.css").read_text(encoding="utf-8")
+    assert ".js .preview-column" in css
+
+
+# -- the run page as a workbench -------------------------------------------
+
+RUN_TABS = ("files", "indicators", "families", "notes", "settings")
+
+
+def panel_of(page: str, tab: str) -> str:
+    match = re.search(rf'<section[^>]*id="{tab}"[^>]*>(.*?)</section>', page, re.S)
+    assert match, f"no {tab} section on the page"
+    return match.group(0)
+
+
+def test_the_run_opens_on_a_summary_strip_with_the_numbers(tmp_path: Path):
+    name = run_with_networks(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    strip = re.search(r'<section[^>]*class="run-summary"[^>]*>(.*?)</section>', page, re.S)
+    assert strip, "no summary strip"
+    body = strip.group(1)
+    assert re.search(r"<h1[^>]*>\s*hxxp://203\[\.\]0\[\.\]113\[\.\]24/files/\s*</h1>", body)
+    for label in ("files", "indicators", "families", "hashed", "requests", "notes"):
+        assert re.search(rf"<dt[^>]*>\s*{label}\s*</dt>", body), label
+    assert "AS64496" in body
+    assert f"/runs/{name}/report.md" in body
+
+
+def test_a_missing_value_in_the_strip_says_none_not_a_dash(tmp_path: Path):
+    name = save_run(tmp_path, ScanResult(root_url="http://127.0.0.1:8080/"))
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    strip = re.search(r'<section[^>]*class="run-summary"[^>]*>(.*?)</section>', page, re.S)
+    assert strip
+    assert not re.search(r"<dd[^>]*>\s*-\s*</dd>", strip.group(1))
+    assert re.search(r"<dd[^>]*>\s*<span class=\"none\">none</span>\s*</dd>", strip.group(1))
+
+
+def test_every_part_of_the_run_has_a_tab_and_a_section(tmp_path: Path):
+    """Without the script the tabs are anchors and every section is on the page."""
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    nav = re.search(r"<nav[^>]*data-run-tabs[^>]*>(.*?)</nav>", page, re.S)
+    assert nav, "no tab bar"
+    for tab in RUN_TABS:
+        assert re.search(rf'<a[^>]*href="#{tab}"', nav.group(1)), tab
+        panel_of(page, tab)
+    files_tab = re.search(r'<a[^>]*href="#files"[^>]*>(.*?)</a>', nav.group(1), re.S)
+    assert files_tab and ">4<" in files_tab.group(1).replace(" ", "")
+
+
+def test_the_tab_in_the_address_bar_is_the_one_shown_first(tmp_path: Path):
+    name = run_with_errors(tmp_path)
+    client = TestClient(create_app(tmp_path))
+    for asked, shown in (("notes", "notes"), (None, "files"), ("nonsense", "files")):
+        params = {"tab": asked} if asked else {}
+        page = client.get(f"/runs/{name}", params=params).text
+        current = re.findall(r'<section[^>]*class="run-panel is-current"[^>]*id="(\w+)"', page)
+        assert current == [shown], (asked, current)
+
+
+def test_the_listing_and_the_preview_share_the_files_tab(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    files = panel_of(page, "files")
+    assert "data-listing-rows" in files
+    assert 'id="preview"' in files
+
+
+def test_drivers_ride_on_the_listing_instead_of_a_card(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    assert "What drives the rest" not in page
+    strip = re.search(r"<ol[^>]*data-drivers[^>]*>(.*?)</ol>", page, re.S)
+    assert strip and "install.bat" in strip.group(1)
+    row = re.search(r"<tr[^>]*>(?:(?!</tr>).)*install\.bat(?:(?!</tr>).)*</tr>", page, re.S)
+    assert row and 'class="driver-badge"' in row.group(0)
+
+
+def test_the_driver_strip_holds_three_at_most(tmp_path: Path):
+    names = [f"stage{n}.bat" for n in range(1, 6)]
+    entries = [
+        Entry(
+            url=f"http://127.0.0.1:8080/{own}",
+            name=own,
+            depth=1,
+            kind="script",
+            fetched_bytes=80,
+            text_preview="\n".join(f"call {other}" for other in names if other != own),
+        )
+        for own in names
+    ]
+    name = save_run(tmp_path, ScanResult(root_url="http://127.0.0.1:8080/", entries=entries))
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    strip = re.search(r"<ol[^>]*data-drivers[^>]*>(.*?)</ol>", page, re.S)
+    assert strip
+    assert strip.group(1).count("<li") == 3
+    assert page.count('class="driver-badge"') == 5
+
+
+def test_the_indicators_and_their_networks_live_on_their_own_tab(tmp_path: Path):
+    name = run_with_networks(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    indicators = panel_of(page, "indicators")
+    assert "198[.]51[.]100[.]77" in indicators
+    assert "TEST-NET-HOSTING" in indicators
+    assert "ip2asn-combined.tsv" in indicators
+
+
+def test_notes_and_families_live_on_their_own_tabs(tmp_path: Path):
+    client = TestClient(create_app(tmp_path))
+    notes = panel_of(client.get(f"/runs/{run_with_errors(tmp_path)}").text, "notes")
+    assert "<details" in notes
+    assert "what this means" in notes
+    families = panel_of(client.get(f"/runs/{run_with_a_family(tmp_path)}").text, "families")
+    assert "svc{n}.exe" in families
+
+
+def test_an_empty_tab_says_so_in_one_sentence(tmp_path: Path):
+    empty = ScanResult(root_url="http://127.0.0.1:8080/", listing_flavor="python")
+    name = save_run(tmp_path, empty)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    for tab in ("indicators", "families", "notes"):
+        assert 'class="empty"' in panel_of(page, tab), tab
+
+
+def test_a_tab_the_page_does_not_have_is_never_echoed_back(tmp_path: Path):
+    """?tab= is only compared against the known parts; whatever else arrives is
+    dropped, never written into the page, and the files tab is shown."""
+    name = run_with_errors(tmp_path)
+    client = TestClient(create_app(tmp_path))
+    hostile = '"><script>alert(1)</script>'
+    for asked in (hostile, "NOTES", "notes ", "files#notes", "../notes"):
+        response = client.get(f"/runs/{name}", params={"tab": asked})
+        assert response.status_code == 200, asked
+        current = re.findall(
+            r'<section[^>]*class="run-panel is-current"[^>]*id="(\w+)"', response.text
+        )
+        assert current == ["files"], (asked, current)
+    page = client.get(f"/runs/{name}", params={"tab": hostile}).text
+    assert "<script>alert(1)" not in page
+    assert "alert(1)" not in page
+
+
+def test_a_repeated_tab_shows_exactly_one_part(tmp_path: Path):
+    name = run_with_errors(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}?tab=notes&tab=families").text
+    current = re.findall(r'<section[^>]*class="run-panel is-current"[^>]*id="(\w+)"', page)
+    assert len(current) == 1
+    assert current[0] in ("notes", "families")
+    tabs = re.findall(r'<a class="run-tab is-current"[^>]*data-tab="(\w+)"', page)
+    assert tabs == current
+
+
+def test_the_server_and_the_page_agree_on_the_tabs():
+    """The tab names the server accepts are the tab names the template draws."""
+    from dirsift.web import RUN_TABS as served
+
+    assert served == RUN_TABS
+
+# -- a file that is not in the run -----------------------------------------
+
+GONE = "http://127.0.0.1:8080/gone.exe"
+
+
+def missing_heading(panel: str) -> re.Match[str] | None:
+    return re.search(r'<h2[^>]*class="preview-name"[^>]*>(.*?)</h2>', panel, re.S)
+
+
+def test_a_file_not_in_the_run_gets_a_panel_that_says_so(tmp_path: Path):
+    """The preview lands in a sheet on a narrow screen, so the miss has to read
+    like a panel: a heading focus can land on, the address it looked for, and a
+    way back. It stays a 404."""
+    name = run_with_a_family(tmp_path)
+    response = TestClient(create_app(tmp_path)).get(f"/runs/{name}/file", params={"url": GONE})
+    assert response.status_code == 404
+    panel = response.text
+    assert 'class="preview"' in panel
+    heading = missing_heading(panel)
+    assert heading, "the miss has no heading"
+    assert 'tabindex="-1"' in heading.group(0)
+    assert "Not in this run" in heading.group(1)
+    assert "hxxp://127[.]0[.]0[.]1:8080/gone[.]exe" in panel
+    assert "http://127.0.0.1:8080/gone.exe" not in panel  # targets are defanged
+    assert re.search(rf'<a[^>]*href="/runs/{name}"', panel)
+
+
+def test_the_missing_panel_escapes_the_address_it_quotes(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    hostile = "http://127.0.0.1:8080/<script>alert(1)</script>"
+    panel = TestClient(create_app(tmp_path)).get(
+        f"/runs/{name}/file", params={"url": hostile}
+    ).text
+    assert "<script>" not in panel
+    assert "&lt;script&gt;" in panel
+
+
+def test_every_panel_route_answers_a_miss_the_same_way(tmp_path: Path):
+    """The verdict and the comparison land in the same preview, so they miss the
+    same way the preview does."""
+    name = run_with_a_family(tmp_path)
+    client = TestClient(create_app(tmp_path))
+    misses = (
+        client.post(f"/runs/{name}/verdict", params={"url": GONE}),
+        client.get(
+            f"/runs/{name}/diff",
+            params={"a": "http://127.0.0.1:8080/install.bat", "b": GONE},
+        ),
+    )
+    for response in misses:
+        assert response.status_code == 404
+        heading = missing_heading(response.text)
+        assert heading and "Not in this run" in heading.group(1)
+        assert "hxxp://127[.]0[.]0[.]1:8080/gone[.]exe" in response.text
+
+
+def test_a_miss_never_asks_the_scanner(tmp_path: Path):
+    asked = []
+    name = run_with_a_family(tmp_path)
+    app = create_app(tmp_path, lookup=lambda digest, api_key=None: asked.append(digest))
+    TestClient(app).post(f"/runs/{name}/verdict", params={"url": GONE})
+    assert asked == []
+
+# -- driver scores come from the server, not from the strip ----------------
+
+
+def test_every_scored_driver_gets_its_badge_not_only_the_first_six(tmp_path: Path):
+    """The strip shows three; the badges in the listing are not held to the
+    strip's short list. Eight scripts that call each other all carry one."""
+    names = [f"stage{n}.bat" for n in range(1, 9)]
+    entries = [
+        Entry(
+            url=f"http://127.0.0.1:8080/{own}",
+            name=own,
+            depth=1,
+            kind="script",
+            fetched_bytes=80,
+            text_preview="\n".join(f"call {other}" for other in names if other != own),
+        )
+        for own in names
+    ]
+    name = save_run(tmp_path, ScanResult(root_url="http://127.0.0.1:8080/", entries=entries))
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    assert page.count('class="driver-badge"') == 8
+    strip = re.search(r"<ol[^>]*data-drivers[^>]*>(.*?)</ol>", page, re.S)
+    assert strip and strip.group(1).count("<li") == 3
+
+
+def test_a_badge_and_the_strip_show_the_same_rounded_score(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    strip = re.search(r"<ol[^>]*data-drivers[^>]*>(.*?)</ol>", page, re.S)
+    assert strip
+    in_strip = re.search(r'class="driver-score">.*?</span>\s*(\d+)\s*</span>', strip.group(1), re.S)
+    row = re.search(r"<tr[^>]*>(?:(?!</tr>).)*install\.bat(?:(?!</tr>).)*</tr>", page, re.S)
+    assert row
+    badge = re.search(r'class="driver-badge">.*?</span>\s*(\d+)\s*</span>', row.group(0), re.S)
+    assert in_strip and badge
+    assert in_strip.group(1) == badge.group(1)
