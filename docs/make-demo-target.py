@@ -5,11 +5,12 @@ RFC 5737 and RFC 2606, so nothing in this tree points at a real host. The only
 binary-looking parts are magic bytes, which is what the classifier reads.
 """
 
+import tempfile
 from pathlib import Path
 from shutil import rmtree
 
 NL = chr(10)
-ROOT = Path(r"C:\Users\ALP\AppData\Local\Temp\dirsift-demo-target")
+ROOT = Path(tempfile.gettempdir()) / "dirsift-demo-target"
 
 MZ = bytes([0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00])
 PNG = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
@@ -119,7 +120,7 @@ text(
     [
         "host,user,seen",
         "SRV-FILE01,admin,2026-09-15",
-        "WIN-LAPTOP-B,alp,2026-09-14",
+        "WIN-LAPTOP-B,jdoe,2026-09-14",
     ],
 )
 
