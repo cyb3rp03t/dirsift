@@ -294,11 +294,24 @@ def iocs_cmd(
     fanged: Annotated[
         bool, typer.Option("--fanged", help="Print live values. You asked for it.")
     ] = False,
+    min_confidence: Annotated[
+        int | None,
+        typer.Option(
+            "--min-confidence", "-c", help="Only indicators scored this high or higher, 0 to 100."
+        ),
+    ] = None,
 ) -> None:
     """Print just the indicators, one per line, for piping."""
+    if min_confidence is not None and not 0 <= min_confidence <= 100:
+        console.print(
+            f"[bold]{min_confidence} is not a confidence.[/bold] Pass a number from 0 to 100."
+        )
+        raise typer.Exit(code=2)
     result, _ = _load(run)
     for ioc in result.iocs:
         if ioc_type and ioc.ioc_type != ioc_type:
+            continue
+        if min_confidence is not None and (ioc.confidence or 0) < min_confidence:
             continue
         sys.stdout.write((ioc.value if fanged else ioc.defanged) + "\n")
 

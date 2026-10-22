@@ -104,6 +104,17 @@ class Ioc(BaseModel):
     context: str | None = None
     label: str | None = None  # e.g. "aws_access_key", "telegram_bot_token"
 
+    # How it sat in the files. Defaults describe one live mention in code, so a
+    # run saved before these existed loads as it always did.
+    occurrences: int = 1
+    in_comment: bool = False  # every mention was on a comment line
+    seen_live: bool = True  # at least one mention was written undefanged
+
+    # How sure the run is that this is a live part of the kit, not whether it
+    # is hostile. Filled by the confidence pass, with the reasons that set it.
+    confidence: int | None = None
+    confidence_reasons: list[str] = Field(default_factory=list)
+
     # Filled in from a local table, when the machine has one. No lookup is made.
     asn: int | None = None
     as_name: str | None = None

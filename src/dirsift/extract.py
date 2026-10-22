@@ -150,6 +150,31 @@ _NOISE_SECRET_VALUES = {
 }
 
 
+#: How a comment line starts, after its indentation, across the languages a kit
+#: is written in: shell and Python, C-like code, ini files, batch, HTML, and the
+#: body lines of a /* block. Compared in lower case, so REM matches rem too.
+COMMENT_PREFIXES = ("#", "//", ";", "rem ", "::", "<!--", "/*", "*")
+
+
+def _line_at(text: str, start: int) -> str:
+    """The line a match starts on, without its line ending, whichever one it was."""
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", start)
+    return text[line_start : line_end if line_end != -1 else len(text)].rstrip("\r")
+
+
+def is_comment(line: str) -> bool:
+    """Whether a line is a comment rather than something the kit runs or reads.
+
+    A shebang starts with # and is the opposite of a comment: it says how the
+    file runs.
+    """
+    stripped = line.lstrip().lower()
+    if stripped.startswith("#!"):
+        return False
+    return stripped.startswith(COMMENT_PREFIXES)
+
+
 def _is_link(value: str) -> bool:
     return value.lower().startswith(("http://", "https://", "ftp://"))
 
@@ -182,11 +207,20 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
         return []
 
     working = refang(text)
+    original = text.lower()
     found: dict[tuple[str, str], Ioc] = {}
 
     def add(ioc_type: str, value: str, start: int, end: int, label: str | None = None) -> None:
         value = value.rstrip(".,;:)\"'")
         if not value:
+            return
+        comment = is_comment(_line_at(working, start))
+        existing = found.get((ioc_type, value.lower()))
+        if existing is not None:
+            # The first mention keeps its context; later ones are only counted,
+            # and one mention outside a comment is enough to make it code.
+            existing.occurrences += 1
+            existing.in_comment = existing.in_comment and comment
             return
         ioc = Ioc(
             ioc_type=ioc_type,
@@ -199,8 +233,13 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
             sources=[source_url],
             context=defang_text(_context(working, start, end)),
             label=label,
+            in_comment=comment,
+            # Matching runs on the refanged text, so positions do not line up
+            # with the original. Whether the value appears as written there is
+            # the question that matters: if not, the source only had it defanged.
+            seen_live=ioc_type not in NETWORK_TYPES or value.lower() in original,
         )
-        found.setdefault(ioc.key(), ioc)
+        found[ioc.key()] = ioc
 
     for match in _URL.finditer(working):
         url = match.group(0)
@@ -266,11 +305,17 @@ def dedupe_iocs(iocs: list[Ioc]) -> list[Ioc]:
 
     The first file keeps the context line, and every file that carried the
     indicator is listed in ``sources``: a family of builds usually shares its
-    callback, and the second build's rule has to match on it as well.
+    callback, and the second build's rule has to match on it as well. Mentions
+    add up; it is a comment only if it was one everywhere, and live if it was
+    written live anywhere.
     """
     out: dict[tuple[str, str], Ioc] = {}
     for ioc in iocs:
         kept = out.setdefault(ioc.key(), ioc)
+        if kept is not ioc:
+            kept.occurrences += ioc.occurrences
+            kept.in_comment = kept.in_comment and ioc.in_comment
+            kept.seen_live = kept.seen_live or ioc.seen_live
         for url in ioc.sources or [ioc.source_url]:
             if url not in kept.sources:
                 kept.sources.append(url)

@@ -56,7 +56,8 @@ next build with, without ever running a sample.
   the reasons shown. It is a candidate, not a verdict.
 - **Extracts indicators.** Addresses, URLs, domains, credential shapes, mutexes,
   registry keys and paths, each with the line it came from, deduped across
-  defanged and live spellings, and defanged on the way out.
+  defanged and live spellings, and defanged on the way out. Each one carries a
+  confidence from 0 to 100 that it is a live part of the kit, with the reasons.
 - **Hashes what it read whole.** sha256 and md5 for every file that fitted under
   the peek ceiling, in the listing, in the report and in `hashes.txt`. A file cut
   at the ceiling gets no hash and says so, because half a file hashes to nothing
@@ -186,6 +187,39 @@ dirsift web
 Scanning is separate from analysing on purpose. `--json` saves everything the
 walk saw; `report` and `iocs` work from that file with no network at all. Sharpen
 a rule, re-run the analysis, leave the target alone.
+
+### How sure is it
+
+Sixty indicators out of one directory are rarely sixty pieces of
+infrastructure. Some are the kit's own callbacks; others are an address in a
+comment, a resolver pinged to test the line, a domain someone wrote down
+defanged. Every indicator gets a confidence from 0 to 100 that it is a live,
+pivotable part of this kit. It is not a judgement of whether it is malicious:
+DirSift weighs how the indicator sits in the files, and every point comes with
+its reason.
+
+| Observation | Points |
+|---|---:|
+| Where every indicator starts | 50 |
+| Each further file that names it, up to +20 | +10 |
+| Kept across two or more builds of one version family | +15 |
+| In a config file or a script | +10 |
+| Named by the likely entry point | +5 |
+| Points back at the host being triaged | +10 |
+| Only ever in comments | -15 |
+| Written only defanged in the source | -25 |
+| A private, CGNAT or link-local address | -20 |
+| A public resolver such as 8.8.8.8 | -30 |
+| Seen only in files cut at the peek ceiling | -5 |
+
+75 and above is high, 50 to 74 medium, below that low. The report shows the
+band and score on every line, highest first, and the reasons beside the low
+ones; the run file keeps them all. `iocs` takes a threshold, and without one its
+output is unchanged:
+
+```bash
+dirsift iocs run.json -c 75
+```
 
 ### Revisiting a host
 
@@ -327,7 +361,7 @@ full binary and never executes anything.
 
 ```bash
 uv sync
-uv run pytest          # 276 tests
+uv run pytest          # 308 tests
 uv run ruff check .
 ```
 

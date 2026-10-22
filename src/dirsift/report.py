@@ -15,10 +15,11 @@ from __future__ import annotations
 from datetime import datetime
 
 from .classify import INTERESTING_NAMES, mismatch
+from .confidence import band, short_reason
 from .diagnose import explain
 from .extract import defang
 from .glue import GlueCandidate
-from .models import Entry, Kind, ScanResult
+from .models import Entry, Ioc, Kind, ScanResult
 
 _KIND_LABEL = {
     Kind.PE: "Windows executables",
@@ -67,6 +68,21 @@ def network_note(asn: int | None, as_name: str = "", country: str = "") -> str:
         parts.append(as_name)
     tail = " ".join(parts)
     return f"{tail}, {country}" if country else tail
+
+
+def confidence_note(ioc: Ioc) -> str:
+    """The band and score at the end of an indicator's line.
+
+    A low score carries its reasons in short, because a low score is the one
+    the reader will want to argue with; high and medium lines stay short.
+    """
+    if ioc.confidence is None:
+        return ""
+    level = band(ioc.confidence)
+    note = f"  {level} {ioc.confidence}"
+    if level == "low" and ioc.confidence_reasons:
+        note += " (" + ", ".join(short_reason(r) for r in ioc.confidence_reasons) + ")"
+    return note
 
 
 def _rel(entry: Entry, root: str) -> str:
@@ -223,6 +239,10 @@ def render_markdown(
             "queried or submitted anywhere. The address in the header is the one the "
             "scan connected to, which the connection had to know regardless.")
         add("")
+        add("Each line ends with how sure the run is that the indicator is a live part of "
+            "this kit, from 0 to 100, highest first. It is not a judgement of whether "
+            "anything is malicious.")
+        add("")
         if result.asn_source:
             stamp = f", dated {result.asn_stamp}" if result.asn_stamp else ""
             add(f"Networks read from `{result.asn_source}`{stamp}, on this machine. "
@@ -235,10 +255,14 @@ def render_markdown(
             add(f"**{_IOC_LABEL.get(ioc_type, ioc_type)}** ({len(items)})")
             add("")
             add("```")
+            # Strongest first, so the cut at 80 drops the weakest rather than
+            # whatever sorted last; ties keep the order they came in.
+            items = sorted(items, key=lambda item: -(item.confidence or 0))
             for ioc in items[:80]:
                 label = f"  [{ioc.label}]" if ioc.label else ""
                 network = network_note(ioc.asn, ioc.as_name, ioc.country)
-                add(f"{ioc.defanged}{label}{f'  {network}' if network else ''}")
+                add(f"{ioc.defanged}{label}{f'  {network}' if network else ''}"
+                    f"{confidence_note(ioc)}")
             if len(items) > 80:
                 add(f"... +{len(items) - 80} more")
             add("```")
