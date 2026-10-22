@@ -832,6 +832,29 @@ def test_the_tab_in_the_address_bar_is_the_one_shown_first(tmp_path: Path):
         assert current == [shown], (asked, current)
 
 
+def test_a_file_in_the_address_bar_forces_the_files_tab(tmp_path: Path):
+    """A shared ?file= link means a preview, and the preview lives in the files
+    panel. Whatever ?tab= rode along, the files panel is the one shown, so the
+    preview is never stranded in a hidden panel (a narrow-screen page lock)."""
+    name = run_with_a_family(tmp_path)
+    opened = "http://127.0.0.1:8080/install.bat"
+    client = TestClient(create_app(tmp_path))
+    for asked in ("notes", "indicators", None, "nonsense"):
+        params = {"file": opened}
+        if asked:
+            params["tab"] = asked
+        page = client.get(f"/runs/{name}", params=params).text
+        current = re.findall(r'<section[^>]*class="run-panel is-current"[^>]*id="(\w+)"', page)
+        assert current == ["files"], (asked, current)
+        tabs = re.findall(r'<a class="run-tab is-current"[^>]*data-tab="(\w+)"', page)
+        assert tabs == ["files"], (asked, tabs)
+    # Without ?file=, ?tab= still decides the panel.
+    notes_only = client.get(f"/runs/{name}", params={"tab": "notes"}).text
+    assert re.findall(
+        r'<section[^>]*class="run-panel is-current"[^>]*id="(\w+)"', notes_only
+    ) == ["notes"]
+
+
 def test_the_listing_and_the_preview_share_the_files_tab(tmp_path: Path):
     name = run_with_a_family(tmp_path)
     page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text

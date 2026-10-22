@@ -1080,6 +1080,14 @@ table.listing td.data {
   margin: 0;
 }
 
+/* A link sitting inside a notice shares the notice colour, so colour alone
+   cannot tell it apart from the sentence around it. Keep it underlined so it
+   reads as a link without leaning on colour. */
+.notice a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .notice.is-warn {
   border-color: color-mix(in srgb, var(--warn) 40%, transparent);
   color: var(--warn);
@@ -1329,7 +1337,7 @@ pre.source mark {
 
 /* ---- responsive -------------------------------------------------------- */
 
-@media (max-width: 1100px) { /* ds-allow-hardcode: a media query cannot read a custom property */
+@media (max-width: 1099px) { /* ds-allow-hardcode: a media query cannot read a custom property */
   .grid-hero,
   .workspace,
   .grid-thirds {

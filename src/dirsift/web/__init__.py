@@ -382,7 +382,10 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             {
                 "name": name,
                 "result": result,
-                "tab": tab if tab in RUN_TABS else RUN_TABS[0],
+                # A ?file= link means a preview, and the preview lives in the
+                # files panel. Force files so the preview is never stranded in a
+                # hidden panel (on a narrow screen that would lock the page).
+                "tab": "files" if file else (tab if tab in RUN_TABS else RUN_TABS[0]),
                 "candidates": drivers[:6],
                 # Every scored file, for the badge on its listing row. The strip
                 # shows a short list; the badges are not held to it.

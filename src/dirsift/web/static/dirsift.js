@@ -163,10 +163,7 @@
 
   function onSwap(handler) {
     var run = function (event) {
-      var source = swapSource(event);
-      if (source) {
-        handler(source, event);
-      }
+      handler(swapSource(event), event);
     };
     document.body.addEventListener("htmx:after:swap", run);
     document.body.addEventListener("htmx:afterOnLoad", run);
@@ -176,6 +173,7 @@
      every part of the run; with it, one part shows at a time and the address
      bar keeps which (?tab=), so a link to the Notes tab opens on the notes. The
      server reads ?tab= too and marks that part, so nothing jumps on load. */
+  var showRunTab = null;
   var tablist = document.querySelector("[data-run-tablist]");
   if (tablist) {
     var runTabs = Array.prototype.slice.call(tablist.querySelectorAll("[data-tab]"));
@@ -216,6 +214,7 @@
         wanted.focus();
       }
     };
+    showRunTab = showTab;
 
     var fromHash = window.location.hash.slice(1);
     var current = tablist.querySelector(".run-tab.is-current") || runTabs[0];
@@ -262,7 +261,7 @@
      the preview opens as a sheet over the listing. Without the script there is
      no sheet: the preview stays in the page, below the listing. The sheet takes
      one history entry when it opens, so the browser's back button closes it. */
-  var narrow = window.matchMedia("(max-width: 1100px)");
+  var narrow = window.matchMedia("(max-width: 1099px)");
   var sheet = document.querySelector("[data-sheet]");
   var sheetReturn = null;
   var sheetPushed = false;
@@ -275,6 +274,24 @@
   function sheetHeading() {
     var preview = document.getElementById("preview");
     return preview && preview.querySelector(".preview-name");
+  }
+
+  function focusPreviewHeading() {
+    var heading = sheetHeading();
+    if (heading) {
+      heading.focus();
+    }
+  }
+
+  /* The sheet lives inside the files panel. If some other tab is showing, the
+     panel is display:none and the sheet would open invisibly, locking the page
+     behind an inert backdrop. Open it only when its own panel is on screen. */
+  function sheetPanelShown() {
+    if (!sheet) {
+      return false;
+    }
+    var panel = sheet.closest(".run-panel");
+    return !panel || panel.classList.contains("is-current");
   }
 
   function setOutsideInert(on) {
@@ -296,7 +313,7 @@
   }
 
   function openSheet(returnTo) {
-    if (!sheet || !narrow.matches) {
+    if (!sheet || !narrow.matches || !sheetPanelShown()) {
       return;
     }
     if (!sheetIsOpen()) {
@@ -354,8 +371,15 @@
   });
 
   window.addEventListener("popstate", function () {
-    if (sheetIsOpen() && !new URL(window.location.href).searchParams.get("file")) {
+    var hasFile = new URL(window.location.href).searchParams.get("file");
+    if (sheetIsOpen() && !hasFile) {
       finishClose();
+    } else if (!sheetIsOpen() && hasFile && narrow.matches && sheet && sheetHeading()) {
+      /* The forward button brought ?file= back: re-open the sheet so the screen
+         matches the address bar. We sit on the pushed entry again, so the back
+         button (or Esc) can step off it to close. */
+      sheetPushed = true;
+      openSheet(document.querySelector("[data-listing-rows] .link-button.is-selected"));
     }
   });
 
@@ -376,13 +400,25 @@
     }
   });
 
-  /* Whatever lands in the preview (a file, a comparison, a rule) opens the sheet. */
+  /* Whatever lands in the preview (a file, a comparison, a rule) opens the
+     sheet. htmx 4 reports the swap target, not the button, as the source when
+     the button is removed by the swap (a link inside the preview), so the file
+     that is now shown is read from the swapped-in panel, not from the trigger.
+     The panel stamps its own file url (data-preview-file), and a 404 panel
+     stamps data-preview-miss so the address bar is not pointed at a file the
+     run does not have. */
   onSwap(function (trigger) {
-    if (!trigger.getAttribute) {
+    var preview = document.getElementById("preview");
+    var panel = preview && preview.querySelector(".preview");
+    /* Every swap on the run page lands in the preview; a page without one (the
+       scan page's polling box) has nothing here to sync. */
+    if (!panel) {
       return;
     }
-    var fileUrl = trigger.getAttribute("data-file-url");
-    if (fileUrl) {
+    var fileUrl = panel.getAttribute("data-preview-file");
+    var isMiss = Boolean(panel && panel.hasAttribute("data-preview-miss"));
+
+    if (fileUrl && !isMiss) {
       var url = new URL(window.location.href);
       url.searchParams.set("file", fileUrl);
       if (narrow.matches && sheet && !sheetIsOpen()) {
@@ -403,20 +439,41 @@
         }
       });
     }
-    if (trigger.getAttribute("hx-target") !== "#preview") {
-      return;
-    }
-    var returnTo = trigger.tagName === "FORM"
+
+    /* Where focus returns when the sheet closes: the button that opened it,
+       unless that button lives inside the sheet (a preview-internal link), in
+       which case keep the listing row that opened the sheet. */
+    var returnTo = trigger && trigger.tagName === "FORM"
       ? trigger.querySelector("[type=submit]")
       : trigger;
-    if (sheet && sheet.contains(returnTo)) {
-      returnTo = null; /* a link inside the sheet: keep the row that opened it */
+    if (returnTo && sheet && sheet.contains(returnTo)) {
+      returnTo = null;
     }
-    openSheet(returnTo);
+    /* A preview-internal link was swapped out with the rest of the panel, so
+       htmx hands back a button that is no longer in the document (or, in some
+       builds, the preview target itself). Either way it means the move came
+       from inside the preview, not from the listing. */
+    var fromPreview = Boolean(
+      trigger && (trigger === preview || preview.contains(trigger) || !document.contains(trigger))
+    );
+    if (narrow.matches && sheet) {
+      openSheet(returnTo); /* moves focus to the panel heading */
+    } else if (fromPreview) {
+      /* Desktop: a listing click keeps focus on the row, but navigating from
+         inside the preview moves focus to the new panel heading. */
+      focusPreviewHeading();
+    }
   });
 
-  /* A narrow page opened with ?file= starts with the sheet up. */
-  if (narrow.matches && new URL(window.location.href).searchParams.get("file") && sheetHeading()) {
-    openSheet(document.querySelector("[data-listing-rows] .link-button.is-selected"));
+  /* A narrow page opened with ?file= starts with the sheet up. The server
+     already forces the files tab for a ?file= link; switch to it here too so
+     the sheet never opens behind a hidden panel even if that is somehow off. */
+  if (new URL(window.location.href).searchParams.get("file") && sheetHeading()) {
+    if (showRunTab) {
+      showRunTab("files");
+    }
+    if (narrow.matches) {
+      openSheet(document.querySelector("[data-listing-rows] .link-button.is-selected"));
+    }
   }
 })();
