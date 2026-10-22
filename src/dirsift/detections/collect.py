@@ -146,7 +146,7 @@ def _suffix(host: str, suffixes) -> bool:
     return any(host == suffix or host.endswith("." + suffix) for suffix in suffixes)
 
 
-def _address_reason(value: str, options: Options) -> str | None:
+def address_reason(value: str, options: Options) -> str | None:
     """Why an address is kept out, or None to keep it."""
     ip = ipaddress.ip_address(value)
     if value in PUBLIC_RESOLVERS or str(ip) in PUBLIC_RESOLVERS:
@@ -196,7 +196,7 @@ def _host_kind(host: str) -> str:
 
 def _host_reason(host: str, options: Options) -> str | None:
     if _ip_version(host) is not None:
-        return _address_reason(host, options)
+        return address_reason(host, options)
     return _name_reason(host, options)
 
 
@@ -272,7 +272,7 @@ def collect(result: ScanResult, options: Options) -> Collected:
                 if _host_reason(host, options) == SHARED:
                     gather.drop(_host_kind(result.target_ip), result.target_ip, SHARED)
                 elif selected(_host_kind(result.target_ip)):
-                    reason = _address_reason(result.target_ip, options)
+                    reason = address_reason(result.target_ip, options)
                     if reason:
                         gather.drop(_host_kind(result.target_ip), result.target_ip, reason)
                     else:

@@ -428,7 +428,7 @@ def case_file_checks(page, checks: Checks) -> None:
 
 
 def narrow_only(page, checks: Checks) -> None:
-    # QA-01: a ?tab=notes&file= deep link must not lock the page.
+    # A ?tab=notes&file= deep link must not lock the page.
     page.goto(f"{BASE}/runs/fam?tab=notes&file={SVC2}")
     page.wait_for_selector("#preview-sheet.is-open")
     opened = page.is_visible("#preview-sheet.is-open")

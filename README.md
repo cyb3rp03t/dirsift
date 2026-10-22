@@ -307,6 +307,17 @@ air-gapped analysis box. It never reaches out on its own: a scan starts when you
 press the button, every view after that is served from the saved run, and the
 hash check is the one thing that leaves, only when pressed.
 
+The console answers only to its own address. A request whose `Host` is not
+`127.0.0.1`, `localhost`, `[::1]` or the address given to `--host` is refused
+before any route runs, so a page that rebinds its own name to your loopback
+cannot read runs or reports. Every request that changes something (starting a
+scan, a hash check, saving an assessment, building a rule) must also come from
+the console's own pages: a browser sends `Origin` (or `Referer`) with a form
+post, and one naming another site is refused before a scan starts, a hash
+leaves the machine or a file is written. A request with neither header, such as
+your own `curl` on this machine, is accepted, because a browser cannot send a
+cross-site post without them. Forms work with JavaScript turned off.
+
 ## Addresses and their networks
 
 The hosting provider behind an address is the part that repeats between

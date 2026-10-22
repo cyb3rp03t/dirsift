@@ -369,7 +369,7 @@ def test_no_secret_reaches_any_output(target_id, frozen_yara_date):
 
 
 def test_yara_takes_no_text_from_a_file_that_holds_a_secret(frozen_yara_date):
-    """Fail closed (QA-19): the file's other lines may be the secret's own
+    """Fail closed: the file's other lines may be the secret's own
     continuation, so a file with a secret gets no string rule at all."""
     result = ScanResult(
         root_url=ROOT,
@@ -519,7 +519,7 @@ def test_hostile_file_names_and_values_do_not_reach_a_spreadsheet_as_formulas():
             assert not cell.startswith(("=", "+", "-", "@", "\t", "\r")), cell
     by_value = {row[1]: row for row in rows[1:]}
     domain = by_value["'-1+1"]
-    # The name holds a , and an =, so it is percent-encoded as well (QA-20).
+    # The name holds a , and an =, so it is percent-encoded as well.
     assert domain[2] == "'" + name.replace(",", "%2C")
     assert domain[5] == "'@SUM(1+1)"
     assert domain[-1] == "value source_file source_file:pct run"
@@ -666,7 +666,7 @@ def test_cli_refuses_an_unknown_target_or_label(tmp_path):
     assert worse.exit_code == 2
 
 
-# STIX in the rule pack (QA-21)
+# STIX in the rule pack
 
 
 STIX_OPTION_SETS = [
@@ -730,7 +730,7 @@ def test_the_cli_stix_bundle_stays_whole_but_keeps_secrets_out():
     assert "AbCdEfGhIjKl" not in text
 
 
-# CSV under any separator (QA-20)
+# CSV under any separator
 
 FORMULA = ("=", "+", "-", "@", "\t", "\r")
 

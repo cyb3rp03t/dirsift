@@ -155,8 +155,13 @@ def check_gone_scan(context, checks: Checks) -> None:
             status=404, content_type="text/html; charset=utf-8", body=gone_body
         ),
     )
+    # Sent as the console's own page would: same Host, same Origin, so the
+    # console's Host allow list and origin check let it through.
     started = context.request.post(
-        f"{BASE}/scan", form={"url": "http://127.0.0.1:9/"}, max_redirects=0
+        f"{BASE}/scan",
+        form={"url": "http://127.0.0.1:9/"},
+        headers={"Origin": BASE},
+        max_redirects=0,
     )
     page.goto(f"{BASE}{started.headers['location']}")
     page.wait_for_selector(".job-live .notice")  # the gone fragment is in

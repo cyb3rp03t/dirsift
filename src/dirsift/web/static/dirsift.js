@@ -729,6 +729,12 @@
     if (!trigger) {
       return false;
     }
+    /* The assessment form swaps itself out, so its trigger is no longer in the
+       page by the time this runs; it never belongs to the preview. */
+    var own = trigger instanceof Element ? trigger : trigger.parentElement;
+    if (own && own.closest("[data-report], [data-assess]")) {
+      return false;
+    }
     if (trigger === preview || preview.contains(trigger) || !document.contains(trigger)) {
       return true;
     }
@@ -794,4 +800,441 @@
   if (sheet && sheet.hasAttribute("data-sheet-open") && sheetHeading()) {
     openSheet(selectedLink());
   }
+
+  /* The report window. Without the script it is the last part of the run page
+     and the Report link scrolls to it. With it, the link opens it as a dialog:
+     the page behind goes inert, Tab wraps inside, Esc and the scrim close it,
+     and focus goes back to the link. */
+  var report = document.querySelector("[data-report]");
+  var reportScrim = document.querySelector("[data-report-scrim]");
+  var reportReturn = null;
+  var reportInert = [];
+
+  function reportIsOpen() {
+    return Boolean(report && report.classList.contains("is-open"));
+  }
+
+  function reportInertOutside(on) {
+    if (!on) {
+      reportInert.forEach(function (node) {
+        node.inert = false;
+      });
+      reportInert = [];
+      return;
+    }
+    var keep = function (node) {
+      return node === reportScrim || node.id === "toast-region" || node.tagName === "SCRIPT";
+    };
+    for (var node = report; node && node !== document.body; node = node.parentElement) {
+      Array.prototype.forEach.call(node.parentElement.children, function (sibling) {
+        if (sibling !== node && !sibling.inert && !keep(sibling)) {
+          sibling.inert = true;
+          reportInert.push(sibling);
+        }
+      });
+    }
+  }
+
+  function openReport(returnTo) {
+    if (!report || reportIsOpen()) {
+      return;
+    }
+    reportReturn = returnTo || null;
+    report.classList.add("is-open");
+    report.setAttribute("role", "dialog");
+    report.setAttribute("aria-modal", "true");
+    document.documentElement.classList.add("sheet-open");
+    if (reportScrim) {
+      reportScrim.hidden = false;
+    }
+    reportInertOutside(true);
+    var title = report.querySelector("#report-title");
+    if (title) {
+      title.focus();
+    }
+  }
+
+  function closeReport() {
+    if (!reportIsOpen()) {
+      return;
+    }
+    report.classList.remove("is-open");
+    report.removeAttribute("role");
+    report.removeAttribute("aria-modal");
+    document.documentElement.classList.remove("sheet-open");
+    if (reportScrim) {
+      reportScrim.hidden = true;
+    }
+    reportInertOutside(false);
+    if (window.location.hash === "#report" || window.location.hash === "#assessment") {
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    }
+    var back = reportReturn && document.contains(reportReturn)
+      ? reportReturn
+      : document.querySelector("[data-report-open]");
+    reportReturn = null;
+    if (back) {
+      back.focus();
+    }
+  }
+
+  onClick("[data-report-open]", function (link, event) {
+    if (!report) {
+      return;
+    }
+    event.preventDefault();
+    openReport(link);
+  });
+
+  onClick("[data-report-close]", function () {
+    closeReport();
+  });
+
+  onClick("[data-report-scrim]", function () {
+    closeReport();
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (!reportIsOpen()) {
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeReport();
+      return;
+    }
+    if (event.key !== "Tab") {
+      return;
+    }
+    var stops = all(
+      "a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex='0']",
+      report
+    ).filter(function (node) {
+      return node.offsetParent !== null || node.getClientRects().length > 0;
+    });
+    if (!stops.length) {
+      return;
+    }
+    var first = stops[0];
+    var last = stops[stops.length - 1];
+    var here = document.activeElement;
+    if (event.shiftKey && (here === first || !report.contains(here) || here.id === "report-title")) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (here === last || !report.contains(here))) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+
+  /* Format: one Download button that follows the choice. Without the script the
+     two formats are two buttons. */
+  function chosenFormat() {
+    var on = report && report.querySelector("[data-report-format]:checked");
+    return on ? on.value : "pdf";
+  }
+
+  function paintFormat() {
+    if (!report) {
+      return;
+    }
+    var button = report.querySelector("[data-report-download]");
+    var label = report.querySelector("[data-report-format-name]");
+    var md = chosenFormat() === "md";
+    if (button) {
+      button.setAttribute("formaction", report.getAttribute(md ? "data-md-url" : "data-pdf-url"));
+      if (md) {
+        button.setAttribute("name", "download");
+        button.setAttribute("value", "1");
+      } else {
+        button.removeAttribute("name");
+        button.removeAttribute("value");
+      }
+    }
+    if (label) {
+      label.textContent = md ? "Markdown" : "PDF";
+    }
+  }
+
+  /* TLP: the definition under the select follows the choice, and a choice less
+     restrictive than the label saved for this run says so, with the same
+     sentence the command line prints. */
+  function paintTlp() {
+    if (!report) {
+      return;
+    }
+    var select = report.querySelector("[data-report-tlp]");
+    if (!select) {
+      return;
+    }
+    var value = select.value;
+    all("[data-tlp-def]", report).forEach(function (line) {
+      line.hidden = line.getAttribute("data-tlp-def") !== value;
+    });
+    var warn = report.querySelector("[data-report-warn]");
+    if (!warn) {
+      return;
+    }
+    var savedRank = report.getAttribute("data-saved-rank");
+    var saved = report.getAttribute("data-saved-tlp");
+    var option = select.options[select.selectedIndex];
+    var rank = option ? Number(option.getAttribute("data-rank")) : NaN;
+    if (saved && savedRank !== "" && rank < Number(savedRank)) {
+      warn.textContent = report.getAttribute("data-warn-template")
+        .replace("{choice}", value)
+        .replace("{saved}", saved);
+      warn.hidden = false;
+    } else {
+      warn.textContent = "";
+      warn.hidden = true;
+    }
+  }
+
+  /* After a save the label saved for this run may have changed; the warning
+     reads the new one. */
+  function syncSavedTlp() {
+    var box = document.querySelector("[data-assess]");
+    if (!report || !box) {
+      return;
+    }
+    var saved = box.getAttribute("data-saved-tlp") || "";
+    var stored = report.getAttribute("data-saved-tlp") || "";
+    if (!box.querySelector("[data-assess-status] [role=status]") || saved === stored) {
+      return;
+    }
+    var select = report.querySelector("[data-report-tlp]");
+    var match = select && all("option", select).filter(function (option) {
+      return option.value === saved;
+    })[0];
+    report.setAttribute("data-saved-tlp", saved);
+    report.setAttribute("data-saved-rank", match ? match.getAttribute("data-rank") : "");
+    var note = report.querySelector("#report-tlp-saved");
+    if (note && saved) {
+      note.textContent = "Saved for this run: TLP:" + saved + ". Change the saved label in the assessment below.";
+    }
+    if (select && match) {
+      select.value = saved;
+    }
+    paintTlp();
+  }
+
+  document.addEventListener("change", function (event) {
+    if (!report || !report.contains(event.target)) {
+      return;
+    }
+    if (event.target.matches("[data-report-format]")) {
+      paintFormat();
+    } else if (event.target.matches("[data-report-tlp]")) {
+      paintTlp();
+    } else if (event.target.matches("select[data-defined]")) {
+      var option = event.target.options[event.target.selectedIndex];
+      var help = report.querySelector("[data-definition-for='" + event.target.id + "']");
+      if (help && option) {
+        help.textContent = option.getAttribute("data-definition") || "";
+      }
+    }
+  });
+
+  onClick("[data-report-copy]", function (button) {
+    var select = report && report.querySelector("[data-report-tlp]");
+    var url = report.getAttribute("data-md-url") + "?logo=none&tlp=" +
+      encodeURIComponent(select ? select.value : "");
+    fetch(url, { headers: { Accept: "text/plain" } })
+      .then(function (reply) {
+        if (!reply.ok) {
+          throw new Error(String(reply.status));
+        }
+        return reply.text();
+      })
+      .then(writeClipboard)
+      .then(
+        function () { toast("Copied the report as text"); },
+        function () { toast("The report could not be copied", "alert"); }
+      );
+    button.blur();
+    button.focus();
+  });
+
+  /* A saved, refused or conflicting assessment comes back as the same box. Put
+     focus on its first message, so the result is read out where the reader is. */
+  onSwap(function () {
+    var box = document.querySelector("[data-assess]");
+    if (!box || !report || !reportIsOpen()) {
+      return;
+    }
+    var active = document.activeElement;
+    if (active && active !== document.body && document.contains(active)) {
+      return;
+    }
+    var alert = box.querySelector("[role=alert]");
+    var target = alert || box.querySelector("[data-assess-status]");
+    if (alert) {
+      alert.setAttribute("tabindex", "-1");
+    }
+    if (target) {
+      target.focus();
+    }
+    syncSavedTlp();
+  });
+
+  if (report) {
+    paintFormat();
+    paintTlp();
+    all("[data-report-open]").forEach(function (link) {
+      link.setAttribute("aria-haspopup", "dialog");
+    });
+    /* A link to #report or #assessment (the redirect after a plain form save)
+       opens the window with the assessment showing. */
+    var hash = window.location.hash;
+    if (hash === "#report" || hash === "#assessment") {
+      if (hash === "#assessment") {
+        var fold = report.querySelector("#assessment");
+        if (fold) {
+          fold.open = true;
+        }
+      }
+      openReport(document.querySelector("[data-report-open]"));
+    }
+  }
+
+  /* the rule pack: busy state, last choice wins, focus kept across the redraw */
+
+  /* The rule pack form redraws its whole panel (outerHTML) on every change, so
+     the control that changed is torn out and focus falls to the body. These
+     handlers keep the keyboard's place: the control that fired the change is
+     found again in the fresh panel (by id for the selects, by name and value
+     for the radios and checkboxes) and refocused. While the request is in
+     flight the panel is marked busy and the still stale output is dimmed, so the
+     radio that already moved and the output that has not do not read as a
+     mismatch. htmx 4 aborts an in flight request when a newer change starts
+     (hx-sync on the form), so a slow answer does not let the first choice
+     overwrite the last. */
+  var detLive = null;
+  var detBusyTimer = null;
+  var detPendingFocus = null;
+  var detInFlight = 0;
+
+  function detPanel() {
+    return document.getElementById("det-panel");
+  }
+
+  function detRequest(event) {
+    var elt = event.target;
+    return elt && elt.closest ? elt.closest("[data-det-form]") : null;
+  }
+
+  function describeControl(el) {
+    if (!el || !el.closest || !el.closest("[data-det-form]")) {
+      return null;
+    }
+    return {
+      id: el.id || "",
+      name: (el.getAttribute && el.getAttribute("name")) || "",
+      value: (el.getAttribute && el.getAttribute("value")) || ""
+    };
+  }
+
+  function cssEscape(value) {
+    if (window.CSS && window.CSS.escape) {
+      return window.CSS.escape(value);
+    }
+    return String(value).replace(/["\\\]]/g, "\\$&");
+  }
+
+  function twinOf(panel, want) {
+    if (!panel || !want) {
+      return null;
+    }
+    if (want.id) {
+      var byId = panel.querySelector("#" + cssEscape(want.id));
+      if (byId) {
+        return byId;
+      }
+    }
+    if (want.name) {
+      var selector = '[name="' + cssEscape(want.name) + '"]';
+      if (want.value) {
+        selector += '[value="' + cssEscape(want.value) + '"]';
+      }
+      return panel.querySelector(selector);
+    }
+    return null;
+  }
+
+  /* One quiet line for the screen reader, made the first time a redraw runs so
+     it is in the page before any text is set into it. */
+  function detSay(text) {
+    if (!detLive) {
+      detLive = document.createElement("p");
+      detLive.className = "visually-hidden";
+      detLive.setAttribute("role", "status");
+      detLive.setAttribute("aria-live", "polite");
+      document.body.appendChild(detLive);
+    }
+    detLive.textContent = text;
+  }
+
+  document.body.addEventListener("htmx:before:request", function (event) {
+    if (!detRequest(event)) {
+      return;
+    }
+    detInFlight += 1;
+    detPendingFocus = describeControl(document.activeElement);
+    var panel = detPanel();
+    if (panel) {
+      panel.classList.add("is-busy");
+      panel.setAttribute("aria-busy", "true");
+    }
+    /* A fast answer never speaks: the line is set only if the wait runs long,
+       and each new change resets the timer, so a flurry of clicks says it once. */
+    detSay("");
+    window.clearTimeout(detBusyTimer);
+    detBusyTimer = window.setTimeout(function () {
+      if (detInFlight > 0) {
+        detSay("Updating the rules");
+      }
+    }, 300);
+  });
+
+  document.body.addEventListener("htmx:after:request", function (event) {
+    if (!detRequest(event)) {
+      return;
+    }
+    detInFlight = Math.max(0, detInFlight - 1);
+    if (detInFlight === 0) {
+      window.clearTimeout(detBusyTimer);
+      detSay("");
+      /* htmx 4 ends the request just before it swaps. On success the fresh
+         panel arrives without the flag anyway; on a failed request with no swap
+         this is what makes the panel usable again. */
+      var panel = detPanel();
+      if (panel && panel.classList.contains("is-busy")) {
+        panel.classList.remove("is-busy");
+        panel.removeAttribute("aria-busy");
+      }
+    }
+  });
+
+  onSwap(function () {
+    if (!detPendingFocus) {
+      return;
+    }
+    var panel = detPanel();
+    if (!panel) {
+      return;
+    }
+    var here = document.activeElement;
+    if (here && here !== document.body && document.contains(here)) {
+      /* Focus is still on a live control: this swap was not the redraw (the
+         preview under the panel can land while the change is in flight), so
+         keep the wish for the redraw that follows. */
+      return;
+    }
+    var want = detPendingFocus;
+    detPendingFocus = null;
+    var twin = twinOf(panel, want);
+    if (twin) {
+      twin.focus();
+    }
+  });
 })();

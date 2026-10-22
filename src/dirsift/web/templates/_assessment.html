@@ -1,0 +1,151 @@
+{#- The analyst assessment form. The run page includes it inside the report
+    window with `form` set; the assessment routes render it on its own, with the
+    same keys at the top level. Saving posts the form: with the script htmx swaps
+    this box in place (200, 409 and 422 all come back as this partial), without
+    it the server answers with a redirect back to the run page. -#}
+{% if form is not defined or form is none %}
+{% set form = {
+     "name": name, "action": action, "values": values, "alternatives": alternatives,
+     "revision": revision, "version": version, "saved": saved, "changed": changed,
+     "errors": errors, "missing": missing, "invalid": invalid, "conflict": conflict,
+     "sidecar_error": sidecar_error, "consistency_warning": consistency_warning,
+     "choices": choices, "limits": limits, "icd203": icd203, "icd203_note": icd203_note,
+   } %}
+{% endif %}
+{# form["values"], not form.values: on a dict the dot finds the method first #}
+{% set v = form["values"] %}
+{% set bad = (form.missing or []) + (form.invalid or []) %}
+{% set labels = {
+     "author": "Author", "tlp": "Saved TLP", "assessment": "Assessment", "confidence": "Confidence",
+     "priority": "Priority for follow-up", "status": "Status", "bottom_line": "Bottom line",
+     "rationale": "Rationale", "attribution": "Attribution", "found_via": "Found via",
+   } %}
+
+{#- One select with the definition of the chosen value under it. Each option
+    carries its own definition, so the line follows the choice. -#}
+{#- An unsaved TLP shows the default the report uses, AMBER, so a first save
+    never stores the first option by accident. -#}
+{% macro pick(field, items, note="") -%}
+{% set current = v[field] or ("AMBER" if field == "tlp" else "") %}
+<div class="field">
+  <label class="label" for="as-{{ field }}">{{ labels[field] }}</label>
+  {% if note %}<p class="field-help" id="as-{{ field }}-note">{{ note }}</p>{% endif %}
+  <select id="as-{{ field }}" name="{{ field }}" data-defined
+          aria-describedby="{% if note %}as-{{ field }}-note {% endif %}as-{{ field }}-def"{% if field in bad %} aria-invalid="true"{% endif %}>
+    {% for item in items %}
+    <option value="{{ item.value }}" data-definition="{{ item.definition }}"{% if item.value == current %} selected{% endif %}>{{ item.label }}</option>
+    {% endfor %}
+  </select>
+  {% set chosen = items | selectattr("value", "equalto", current) | first %}
+  <p class="field-help" id="as-{{ field }}-def" data-definition-for="as-{{ field }}">{{ chosen.definition if chosen else "" }}</p>
+</div>
+{%- endmacro %}
+
+{% macro text(field, rows="", tall=false, help="") -%}
+<div class="field">
+  <label class="label" for="as-{{ field }}">{{ labels[field] }}</label>
+  <textarea id="as-{{ field }}" name="{{ field }}" maxlength="{{ form.limits[field] }}"
+            class="{{ 'is-tall' if tall else '' }}"
+            aria-describedby="as-{{ field }}-help"{% if field in bad %} aria-invalid="true"{% endif %}>{{ v[field] }}</textarea>
+  <p class="field-help" id="as-{{ field }}-help">{% if help %}{{ help }} {% endif %}Up to {{ form.limits[field] }} characters.</p>
+</div>
+{%- endmacro %}
+
+<div class="assess-box" id="assessment-form" data-assess data-saved-tlp="{{ v.tlp }}">
+  <form class="assess-form" method="post" action="{{ form.action }}"
+        hx-post="{{ form.action }}" hx-target="#assessment-form" hx-swap="outerHTML">
+    <input type="hidden" name="revision" value="{{ form.revision }}">
+
+    <p class="assess-head" data-assess-status tabindex="-1">
+      <span class="chip">Version {{ form.version }}</span>
+      {% if form.saved and form.changed %}
+      <span role="status">Saved as version {{ form.version }}.</span>
+      {% elif form.saved %}
+      <span role="status">Nothing changed, so the version stays {{ form.version }}.</span>
+      {% elif form.revision == 0 %}
+      <span>Not saved yet.</span>
+      {% endif %}
+    </p>
+
+    {% if form.sidecar_error %}
+    <div class="notice is-warn"><p>{{ form.sidecar_error }}</p></div>
+    {% endif %}
+
+    {% if form.conflict %}
+    <div class="notice is-alert" role="alert">
+      <p>{{ form.conflict }} <a href="/runs/{{ form.name }}#assessment">Reload</a></p>
+    </div>
+    {% endif %}
+
+    {% if form.errors %}
+    <div class="notice is-alert form-errors" role="alert">
+      <div>
+        <p>The assessment was not saved.</p>
+        <ul>
+          {% for message in form.errors %}<li>{{ message }}</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="assess-grid">
+      <div class="field">
+        <label class="label" for="as-author">Author</label>
+        <input type="text" id="as-author" name="author" value="{{ v.author }}" maxlength="{{ form.limits.author }}"
+               autocomplete="off" aria-describedby="as-author-help"{% if 'author' in bad %} aria-invalid="true"{% endif %}>
+        <p class="field-help" id="as-author-help">The analyst who reviewed this report.</p>
+      </div>
+      {{ pick("status", form.choices.status) }}
+      {{ pick("tlp", form.choices.tlp, note="The label saved for this run and the default for its reports. A single download can be stamped with a looser label for that copy, which does not change what is saved here.") }}
+    </div>
+
+    <div class="assess-grid">
+      {{ pick("assessment", form.choices.assessment) }}
+      {{ pick("confidence", form.choices.confidence) }}
+      {{ pick("priority", form.choices.priority) }}
+    </div>
+
+    {% if form.consistency_warning %}
+    <div class="notice is-warn"><p>{{ form.consistency_warning }}</p></div>
+    {% endif %}
+
+    {{ text("bottom_line", help="One or two sentences a reader can act on.") }}
+    {{ text("rationale", tall=true, help="The evidence behind the assessment.") }}
+    <div class="icd" id="as-icd">
+      <p>{{ form.icd203_note }}</p>
+      <ul>
+        {% for row in form.icd203 %}<li><b>{{ row.term }}</b> {{ row.range }}</li>{% endfor %}
+      </ul>
+    </div>
+    <div class="assess-grid">
+      {{ text("attribution") }}
+      {{ text("found_via", help="How this server came to your attention.") }}
+    </div>
+
+    <fieldset>
+      <legend>Alternative explanations</legend>
+      <p class="field-help gap-below-2">Each starts Not ruled out. Mark one Ruled out only with the reason that rules it out.</p>
+      <ul class="alt-list">
+        {% for alt in form.alternatives %}
+        <li class="alt-item">
+          <p id="{{ alt.field }}-x">{{ alt.explanation }}</p>
+          <label class="visually-hidden" for="{{ alt.field }}-status">Status</label>
+          <select id="{{ alt.field }}-status" name="{{ alt.field }}-status" aria-describedby="{{ alt.field }}-x">
+            {% for option in form.choices.alt_status %}
+            <option value="{{ option }}"{% if option == alt.status %} selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+          <label class="label" for="{{ alt.field }}-reason">Reason</label>
+          <textarea id="{{ alt.field }}-reason" name="{{ alt.field }}-reason" maxlength="{{ form.limits.reason }}"
+                    aria-describedby="{{ alt.field }}-x"{% if (alt.field ~ '-reason') in bad %} aria-invalid="true"{% endif %}>{{ alt.reason }}</textarea>
+        </li>
+        {% endfor %}
+      </ul>
+    </fieldset>
+
+    <div class="button-row">
+      <button type="submit" class="button is-quiet">Save assessment</button>
+      <span class="field-help">Final needs Author, Assessment and Bottom line, and Confidence unless the assessment is Undetermined.</span>
+    </div>
+  </form>
+</div>

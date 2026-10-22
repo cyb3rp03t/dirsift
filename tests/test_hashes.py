@@ -14,6 +14,7 @@ import pytest
 from dirsift.fetcher import MIN_DELAY, Response
 from dirsift.models import Entry, ScanResult
 from dirsift.report import render_markdown
+from dirsift.report_model import build_report
 from dirsift.walker import ScanOptions, scan
 
 LOADER = b"@echo off\nstart payload.exe\n"
@@ -112,8 +113,9 @@ def test_the_report_lists_the_hashes_it_has():
             truncated=True,
         )
     )
-    markdown = render_markdown(result, [])
-    assert "## Hashes" in markdown
-    assert "a" * 64 in markdown
-    assert "b" * 32 in markdown
-    assert "big.exe" not in markdown.split("## Hashes", 1)[1].split("##", 1)[0]
+    markdown = render_markdown(build_report(result, []))
+    listing = markdown.split("## Appendix A.", 1)[1].split("## Appendix B.", 1)[0]
+    assert "a" * 64 in listing
+    assert "b" * 32 in listing
+    big = next(line for line in listing.splitlines() if "`big.exe`" in line)
+    assert "cut at the ceiling" in big

@@ -83,11 +83,19 @@
       <span>read {{ result.bytes_fetched | human_size }} in {{ result.requests_made }} request{{ "" if result.requests_made == 1 else "s" }}</span>
     </p>
     <p class="run-exports">
+      {% if report_ctx %}
+      <a class="copy" href="#report" data-report-open>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 3H6v18h12V7z"></path><path d="M14 3v4h4"></path></svg>
+        Report</a>
+      {% else %}
       <a class="copy" href="/runs/{{ name }}/report.md">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M14 3H6v18h12V7z"></path><path d="M14 3v4h4"></path></svg>
         Markdown report</a>
+      {% endif %}
       <a class="copy" href="/runs/{{ name }}/iocs.txt">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -539,5 +547,7 @@
   </div>
 </div>
 <div class="sheet-scrim" data-sheet-scrim hidden></div>
+
+{% if report_ctx %}{% include "_report.html" %}{% endif %}
 
 {% endblock %}

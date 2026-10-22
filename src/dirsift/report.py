@@ -1,46 +1,37 @@
-"""Render a scan as a markdown triage page.
+"""Render the triage report model as Markdown.
 
-The page is written to be read top to bottom once and then argued with: what
-is here, what groups together, what probably starts it, what is worth pulling
-into a VM, and the indicators at the end where they can be copied out in one
-block. Every hostname, URL and address on the page is defanged, because these
-notes get pasted into chats and posts.
+The model in ``report_model`` decides every sentence; this module only lays it
+out. The first and last lines carry the TLP label, the second the DirSift
+mark and name. Every host, address and URL in the model is already defanged,
+so the page can be pasted into a chat or a ticket as it is.
 
-The last section is a scaffold for the writeup, left empty on purpose. The
-tool collects; the sentences are yours.
+``human_size`` and ``network_note`` are small helpers the terminal summary and
+the console share with the report.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+import base64
 
-from .classify import INTERESTING_NAMES, mismatch
-from .diagnose import explain
-from .extract import SecretMask, defang
-from .glue import GlueCandidate
-from .models import Entry, Kind, ScanResult
+from . import report_text as T
+from .report_logo import FAVICON_SVG_INLINE
+from .report_model import (
+    AssessmentEmpty,
+    AssessmentFull,
+    Bullets,
+    Free,
+    Heading,
+    Note,
+    Para,
+    Pre,
+    Report,
+    Summary,
+    Table,
+)
 
-_KIND_LABEL = {
-    Kind.PE: "Windows executables",
-    Kind.ELF: "ELF binaries",
-    Kind.MACHO: "Mach-O binaries",
-    Kind.SCRIPT: "Scripts",
-    Kind.ARCHIVE: "Archives",
-    Kind.DOCUMENT: "Documents",
-    Kind.IMAGE: "Images",
-    Kind.CONFIG: "Config",
-    Kind.DATA: "Data and logs",
-    Kind.WEB: "Web files",
-    Kind.CERT: "Certificates and keys",
-    Kind.UNKNOWN: "Unidentified",
-}
-
-_IOC_LABEL = {
-    "ipv4": "IPv4", "ipv6": "IPv6", "url": "URLs", "domain": "Domains",
-    "email": "Email", "secret": "Credentials and tokens", "btc": "Bitcoin",
-    "eth": "Ethereum", "xmr": "Monero", "mutex": "Mutexes",
-    "registry": "Registry keys", "path": "Filesystem paths",
-}
+LOGO_DATA_URI = "data:image/svg+xml;base64," + base64.b64encode(
+    FAVICON_SVG_INLINE.encode("utf-8")).decode("ascii")
+LOGO_MODES = ("inline", "none")
 
 
 def human_size(size: int | None) -> str:
@@ -69,234 +60,121 @@ def network_note(asn: int | None, as_name: str = "", country: str = "") -> str:
     return f"{tail}, {country}" if country else tail
 
 
-def _rel(entry: Entry, root: str) -> str:
-    return entry.url[len(root) :] if entry.url.startswith(root) else entry.url
+def md_escape(text: str) -> str:
+    """Analyst free text, made inert for a Markdown viewer that renders to HTML.
+
+    The three HTML-significant characters become entities so a ``<script>`` or
+    an ``<img onerror=...>`` prints as those characters, and the one Markdown
+    construct that can carry an active scheme, the inline link or image target,
+    is broken by escaping the parenthesis after ``]``. A defanged indicator
+    such as ``evil[.]example`` survives untouched, because it has no following
+    parenthesis.
+    """
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return text.replace("](", "]\\(")
 
 
-def _fmt_time(value: datetime | None) -> str:
-    return value.strftime("%Y-%m-%d %H:%M UTC") if value else "-"
+def md_cell(text: str) -> str:
+    """A table cell: pipes escaped, line breaks folded so the row stays one line.
+
+    Analyst free text is escaped first; the catalogue's own cells keep the
+    Markdown the report writes on purpose (a bold status, a code span)."""
+    if isinstance(text, Free):
+        text = md_escape(text)
+    return " ".join(text.replace("|", "\\|").splitlines())
 
 
-def _notable(result: ScanResult) -> list[tuple[str, str]]:
-    """Rows a human should look at before deciding whether to go further."""
-    rows: list[tuple[str, str]] = []
-    for entry in result.files:
-        note = mismatch(entry)
-        if note:
-            rows.append((entry.name, f"**type mismatch**: {note}"))
-        elif entry.kind is Kind.CERT:
-            rows.append((entry.name, "certificate or key material"))
-        elif entry.name.lower() in INTERESTING_NAMES or entry.name.lower().startswith("."):
-            rows.append((entry.name, "name suggests configuration or credentials"))
-        elif entry.kind in (Kind.PE, Kind.ELF) and not entry.ext:
-            rows.append((entry.name, "executable with no extension"))
-    return rows
-
-
-def render_markdown(
-    result: ScanResult,
-    candidates: list[GlueCandidate] | None = None,
-    *,
-    scaffold: bool = True,
-    max_rows: int = 400,
-) -> str:
-    candidates = candidates or []
-    root = result.root_url
-    lines: list[str] = []
-    add = lines.append
-
-    # Header
-    add(f"# Open directory triage: {defang(root)}")
-    add("")
-    add(f"- **Scanned**: {_fmt_time(result.started_at)} to {_fmt_time(result.finished_at)}")
-    add(f"- **Server**: `{result.server or 'not advertised'}`")
-    add(f"- **Index flavour**: `{result.listing_flavor or 'unknown'}`")
-    if result.target_ip:
-        network = network_note(result.target_asn, result.target_as_name, result.target_country)
-        suffix = f" ({network})" if network else ""
-        add(f"- **Address**: `{defang(result.target_ip)}`{suffix}")
-    if result.title:
-        add(f"- **Page title**: {result.title}")
-    families = len(result.clusters)
-    add(
-        f"- **Found**: {len(result.files)} files, {len(result.dirs)} directories, "
-        f"{families} version {'family' if families == 1 else 'families'}"
-    )
-    add(
-        f"- **Cost**: {result.requests_made} requests, "
-        f"{human_size(result.bytes_fetched)} read"
-    )
-    add("")
-
-    # Inventory
-    add("## Inventory")
-    add("")
-    by_kind = result.by_kind()
-    if not by_kind:
-        add("_Nothing was listed._")
+def _md_block(add, blk) -> None:
+    if isinstance(blk, Para):
+        add(md_escape(blk.text) if isinstance(blk.text, Free) else blk.text)
         add("")
-    else:
-        add("| Type | Files | Size | Examples |")
-        add("|---|---:|---:|---|")
-        for kind, entries in sorted(by_kind.items(), key=lambda kv: -len(kv[1])):
-            total = sum(e.size or e.fetched_bytes or 0 for e in entries)
-            sample = ", ".join(f"`{e.name}`" for e in entries[:3])
-            if len(entries) > 3:
-                sample += f", +{len(entries) - 3} more"
-            add(f"| {_KIND_LABEL.get(kind, str(kind))} | {len(entries)} | "
-                f"{human_size(total) if total else '-'} | {sample} |")
+    elif isinstance(blk, Note):
+        add(f"_{blk.text}_")
         add("")
-
-    # Clusters
-    if result.clusters:
-        add("## Version families")
+    elif isinstance(blk, Heading):
+        add(f"### {blk.text}")
         add("")
-        add("Files whose names differ only by a version token. Gaps are shown as written: ")
-        add("a missing number usually means a build was pulled, not that it never existed.")
+    elif isinstance(blk, Summary):
+        add(blk.text)
         add("")
-        add("| Family | Variants | Count | Members |")
-        add("|---|---|---:|---|")
-        for cluster in result.clusters:
-            members = ", ".join(f"`{m}`" for m in cluster.members[:6])
-            if len(cluster.members) > 6:
-                members += f", +{len(cluster.members) - 6} more"
-            add(f"| `{cluster.label}` | {', '.join(cluster.variants)} | "
-                f"{len(cluster.members)} | {members} |")
+        add(f"_{blk.closing}_")
         add("")
-
-    # Entry points
-    add("## Entry point candidates")
-    add("")
-    ranked = [c for c in candidates if c.score > 0]
-    if not ranked:
-        add("_No file in this listing reads like a driver for the others._")
+    elif isinstance(blk, Table):
+        add("| " + " | ".join(blk.headers) + " |")
+        add("| " + " | ".join(":-" if a == "l" else "-:" for a in blk.aligns) + " |")
+        for row in blk.rows:
+            add("| " + " | ".join(md_cell(c) for c in row) + " |")
         add("")
-    else:
-        add("Ranked by how much each file looks like the thing that runs the rest. ")
-        add("These are candidates, not conclusions.")
-        add("")
-        for candidate in ranked[:6]:
-            entry = candidate.entry
-            add(f"### `{_rel(entry, root)}` ({candidate.score}/100)")
+    elif isinstance(blk, Pre):
+        if blk.title:
+            add(f"**{blk.title}**")
             add("")
-            for reason in candidate.reasons:
-                add(f"- {reason}")
-            if candidate.references:
-                refs = ", ".join(f"`{r}`" for r in candidate.references[:10])
-                add(f"- references: {refs}")
-            if candidate.tells:
-                add(f"- execution tells: {', '.join(f'`{t}`' for t in candidate.tells[:10])}")
-            add("")
+        fence = "````" if any("```" in line for line in blk.lines) else "```"
+        add(fence + "text")
+        for line in blk.lines:
+            add(line)
+        add(fence)
+        add("")
+    elif isinstance(blk, Bullets):
+        for item in blk.items:
+            add(("1. " if blk.ordered else "- ") + " ".join(item.splitlines()))
+        add("")
+    elif isinstance(blk, AssessmentEmpty):
+        add(f"> {blk.lead} {blk.fields}")
+        add("")
+    elif isinstance(blk, AssessmentFull):
+        add(f"> **{blk.status}.** {blk.assessment}: {blk.definition}.")
+        add(">")
+        add("> | Field | Value |")
+        add("> | :- | :- |")
+        for key, value in blk.rows:
+            add(f"> | {key} | {md_cell(value)} |")
+        if blk.references:
+            add(">")
+            add("> References:")
+            add(">")
+            for ref in blk.references:
+                text = md_escape(ref) if isinstance(ref, Free) else ref
+                add("> - " + " ".join(text.splitlines()))
+        add("")
+    else:  # pragma: no cover - every block type is handled above
+        raise TypeError(type(blk).__name__)
 
-    # Notable
-    notable = _notable(result)
-    if notable:
-        add("## Worth a second look")
-        add("")
-        for name, note in notable[:40]:
-            add(f"- `{name}`: {note}")
-        add("")
 
-    # Hashes
-    hashed = [entry for entry in result.files if entry.sha256]
-    if hashed:
-        add("## Hashes")
-        add("")
-        add("Only the files DirSift read whole. A file cut at the peek ceiling has no ")
-        add("hash here, because half a file hashes to nothing anyone can look up.")
-        add("")
-        add("| Path | SHA256 | MD5 |")
-        add("|---|---|---|")
-        for entry in hashed[:max_rows]:
-            add(f"| `{_rel(entry, root)}` | `{entry.sha256}` | `{entry.md5 or '-'}` |")
-        add("")
-
-    # Indicators
-    add("## Indicators")
+def render_markdown(report: Report, *, logo: str = "inline") -> str:
+    """The report as Markdown. ``logo="none"`` leaves the image out and keeps the name."""
+    if logo not in LOGO_MODES:
+        raise ValueError(f"logo must be one of {', '.join(LOGO_MODES)}")
+    out: list[str] = []
+    add = out.append
+    tlp = report.tlp_label
+    add(f"**{tlp}** · {report.tlp_definition}")
     add("")
-    if not result.iocs:
-        add("_Nothing extracted. Either the readable files were empty or everything here "
-            "is binary._")
-        add("")
-    else:
-        add("Defanged. Pulled from file contents only: none of these was resolved, "
-            "queried or submitted anywhere. The address in the header is the one the "
-            "scan connected to, which the connection had to know regardless.")
-        add("")
-        if result.asn_source:
-            stamp = f", dated {result.asn_stamp}" if result.asn_stamp else ""
-            add(f"Networks read from `{result.asn_source}`{stamp}, on this machine. "
-                "ASN ownership changes, so an answer older than the address is a guess.")
-            add("")
-        mask = SecretMask(result.iocs)
-        grouped: dict[str, list] = {}
-        for ioc in result.iocs:
-            grouped.setdefault(ioc.ioc_type, []).append(ioc)
-        for ioc_type, items in grouped.items():
-            add(f"**{_IOC_LABEL.get(ioc_type, ioc_type)}** ({len(items)})")
-            add("")
-            add("```")
-            for ioc in items[:80]:
-                label = f"  [{ioc.label}]" if ioc.label else ""
-                network = network_note(ioc.asn, ioc.as_name, ioc.country)
-                add(f"{mask.indicator(ioc)}{label}{f'  {network}' if network else ''}")
-            if len(items) > 80:
-                add(f"... +{len(items) - 80} more")
-            add("```")
-            add("")
-
-    # Full listing
-    add("## Full listing")
+    mark = f'<img src="{LOGO_DATA_URI}" alt="" width="28" height="28"> ' if logo == "inline" \
+        else ""
+    add(f"{mark}**DirSift** · {T.REPORT_KIND}")
     add("")
-    add("| Path | Type | Size | Modified | Family |")
-    add("|---|---|---:|---|---|")
-    for entry in sorted(result.entries, key=lambda e: (e.depth, not e.is_dir, e.name))[:max_rows]:
-        path = _rel(entry, root)
-        if entry.is_dir and not path.endswith("/"):
-            path += "/"
-        kind = "dir" if entry.is_dir else str(entry.kind)
-        add(
-            f"| `{path}` | {kind} | {human_size(entry.size or entry.fetched_bytes)} | "
-            f"{entry.modified or '-'} | {entry.cluster or '-'} |"
-        )
-    if len(result.entries) > max_rows:
-        add(f"| _+{len(result.entries) - max_rows} more rows_ | | | | |")
+    add("# " + T.TITLE.format(target=report.target))
     add("")
-
-    # Errors
-    if result.errors:
-        add("## Notes and errors")
+    add("| Document control | |")
+    add("| :- | :- |")
+    for key, value in report.doc_control:
+        add(f"| {key} | {md_cell(value)} |")
+    add("")
+    add("## Contents")
+    add("")
+    for s in report.sections:
+        if not s.appendix:
+            add(f"{s.number}. {s.title} ({s.reader_label})")
+    add("")
+    add("Appendices: " + " · ".join(f"{s.number}. {s.title} ({s.reader_label})"
+                                    for s in report.sections if s.appendix))
+    add("")
+    for s in report.sections:
+        prefix = f"Appendix {s.number}. " if s.appendix else f"{s.number}. "
+        add(f"## {prefix}{s.title}")
         add("")
-        for error in result.errors[:30]:
-            add(f"- `{_rel(Entry(url=error.url, name=''), root) or error.url}` "
-                f"({error.stage}): {error.detail}")
-            meaning = explain(error.detail)
-            if meaning:
-                add(f"  _{meaning}_")
-        add("")
-
-    # Writeup scaffold
-    if scaffold:
-        add("---")
-        add("")
-        add("## Writeup scaffold")
-        add("")
-        add("Empty on purpose. The tool collects; the sentences are yours.")
-        add("")
-        for heading, hint in [
-            ("How I found it", "the query or feed that surfaced this host, and the date"),
-            ("First impression", "what it looked like before you read anything"),
-            ("What is in the directory", "the inventory above, in one paragraph"),
-            ("The part worth looking at", "the single file that made this interesting"),
-            ("The chain", "stage to stage, in order, with arrows"),
-            ("What I could not establish", "say it plainly; unproven is not the same as false"),
-            ("Assessment", "operator workspace, test box, or a pile of someone else's PoCs"),
-            ("Indicators", "the block above"),
-            ("Credit", "whoever pointed you at it"),
-        ]:
-            add(f"### {heading}")
-            add("")
-            add(f"<!-- {hint} -->")
-            add("")
-
-    return "\n".join(lines).rstrip() + "\n"
+        for blk in s.blocks:
+            _md_block(add, blk)
+    add(f"**{tlp}** · Report `{report.report_id}` · Generated by {report.generator}")
+    return "\n".join(out).rstrip() + "\n"

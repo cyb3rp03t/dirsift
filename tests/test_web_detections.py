@@ -25,7 +25,7 @@ LOOSE = {"exclude_private": "false"}
 @pytest.fixture
 def client(tmp_path: Path) -> TestClient:
     (tmp_path / "golden-run.json").write_text(fixture_result().model_dump_json(), encoding="utf-8")
-    return TestClient(create_app(tmp_path))
+    return TestClient(create_app(tmp_path), base_url="http://127.0.0.1")
 
 
 def test_the_list_names_every_target_with_its_links(client):
@@ -205,7 +205,7 @@ def test_a_hidden_false_before_a_ticked_box_reads_as_ticked(client):
 
 
 def test_defang_shown_leaves_nothing_live_in_a_context_line():
-    """QA-22: the run page defangs a context line when it shows it, not when it saved it."""
+    """The run page defangs a context line when it shows it, not when it saved it."""
     from dirsift.models import Ioc, ScanResult
     from dirsift.web import defang_shown
 
@@ -249,7 +249,7 @@ def test_defang_shown_leaves_nothing_live_in_a_context_line():
 
 
 def test_the_panel_without_htmx_is_a_whole_page(client):
-    """QA-24: with the script off, the link opens a page, not a bare fragment."""
+    """With the script off, the link opens a page, not a bare fragment."""
     reply = client.get("/runs/golden-run/detections")
     assert reply.status_code == 200
     text = reply.text

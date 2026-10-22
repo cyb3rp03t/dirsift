@@ -14,6 +14,7 @@ pulled from a CDN, so this works on an air-gapped analysis box.
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
 import re
 import threading
@@ -35,7 +36,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
-from .. import detections
+from .. import assessment as assess
+from .. import detections, report_text
 from ..analyze import analyze
 from ..asn import default_table
 from ..classify import mismatch
@@ -44,7 +46,9 @@ from ..enrich import MissingKey, api_key_from_env, lookup_hash
 from ..extract import SecretMask, defang
 from ..fetcher import PrivateTargetError, ScopeError
 from ..models import Entry, Ioc, ScanResult
-from ..report import human_size, render_markdown
+from ..report import LOGO_MODES, human_size, render_markdown
+from ..report_model import ReportOptions, build_report, load_run_for_report, normalise_tlp
+from ..report_pdf import render_pdf
 from ..rules import build_rules
 from ..walker import ScanOptions, scan
 
@@ -109,6 +113,10 @@ class NoSuchRun(Exception):
     """A run name that is not a run in this folder."""
 
 
+class BadTlp(Exception):
+    """A TLP label in a query that is not one of the five."""
+
+
 #: A digest someone pastes: md5, sha1 or sha256, nothing else.
 HASH = re.compile(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")
 DIGEST_IN_FORM = Form(default="")
@@ -123,6 +131,28 @@ TYPES_IN_QUERY = Query(default=[])
 #: What a live download carries besides the file: never cached, never sniffed
 #: into something a browser would render.
 LIVE_HEADERS = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+
+#: The only Host headers the console answers to. A page served from one of
+#: these is the console's own; any other Host, a DNS-rebinding attacker's name
+#: that resolves to loopback, is refused before a handler runs, on GET as well
+#: as POST. The address passed to --host is added to this set when the app is
+#: built.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
+
+#: What a request from another page, or to a Host this console does not own, is
+#: told. The write is refused before a scan starts, a hash leaves the machine
+#: or a file is written.
+CROSS_ORIGIN_REFUSAL = assess.CROSS_ORIGIN
+BAD_HOST = "This console answers only to its own local address."
+
+
+def host_name(host_header: str) -> str:
+    """The host part of a Host header, without the port; IPv6 brackets kept."""
+    value = host_header.strip()
+    if value.startswith("["):
+        end = value.find("]")
+        return value[: end + 1] if end != -1 else value
+    return value.split(":", 1)[0]
 
 #: Bytes per row in the hex view.
 HEX_COLUMNS = 16
@@ -296,11 +326,30 @@ def defang_shown(text: str | None, result: ScanResult) -> str:
     return detections.defang_with(mask.text(text), values)
 
 
-def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
+def create_app(
+    runs_dir: Path = Path("runs"),
+    lookup=lookup_hash,
+    *,
+    allowed_hosts: tuple[str, ...] | list[str] | set[str] | None = None,
+) -> FastAPI:
     runs_dir = Path(runs_dir)
     runs_dir.mkdir(parents=True, exist_ok=True)
 
+    # Every Host the console will answer to: loopback plus whatever address it
+    # was bound to. A request arriving under any other Host is a rebinding
+    # attempt and never reaches a route.
+    allowed = set(LOOPBACK_HOSTS)
+    if allowed_hosts:
+        allowed.update(h.strip() for h in allowed_hosts if h and h.strip())
+
     app = FastAPI(title="DirSift", docs_url=None, redoc_url=None)
+
+    @app.middleware("http")
+    async def only_local_host(request: Request, call_next):
+        if host_name(request.headers.get("host", "")) not in allowed:
+            return PlainTextResponse(BAD_HOST, status_code=400)
+        return await call_next(request)
+
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     templates.env.filters["human_size"] = human_size
@@ -349,6 +398,84 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
         except (OSError, ValueError) as exc:
             raise NoSuchRun(name) from exc
         return analyze(result)
+
+    sidecar_lock = threading.Lock()
+
+    def sidecar_of(name: str) -> Path:
+        return runs_dir / "assessments" / f"{name}.json"
+
+    def read_sidecar(name: str) -> tuple[dict, str | None]:
+        """The saved assessment and, when the file is broken, why; never an exception."""
+        try:
+            return assess.load(sidecar_of(name)), None
+        except assess.AssessmentError as exc:
+            return {}, assess.UNREADABLE.format(detail=str(exc))
+
+    def report_for(name: str, tlp: str | None):
+        """The report model for a run, with the TLP picked as explicit, saved, AMBER."""
+        try:
+            loaded = load_run_for_report(run_path(name))
+        except (OSError, ValueError) as exc:
+            raise NoSuchRun(name) from exc
+        saved, _ = read_sidecar(name)
+        level = tlp or saved.get("tlp") or report_text.DEFAULT_TLP
+        options = ReportOptions(run_name=name, tlp=level, asn_recorded=loaded.asn_recorded)
+        return build_report(loaded.result, loaded.candidates, options, saved, None,
+                            loaded.run_sha256, loaded.siblings)
+
+    def asked_tlp(tlp: str | None) -> str | None:
+        if tlp is None or tlp == "":
+            return None
+        label = normalise_tlp(tlp)
+        if label is None:
+            raise BadTlp()
+        return label
+
+    def report_context(name: str) -> dict:
+        saved, error = read_sidecar(name)
+        saved_tlp = saved.get("tlp") or None
+        return {
+            "name": name,
+            "md_url": f"/runs/{name}/report.md",
+            "pdf_url": f"/runs/{name}/report.pdf",
+            "assessment_url": f"/runs/{name}/assessment",
+            "pdf_filename": f"dirsift_{name}_report.pdf",
+            "md_filename": f"dirsift_{name}_report.md",
+            "default_tlp": report_text.DEFAULT_TLP,
+            "saved_tlp": saved_tlp,
+            "selected_tlp": saved_tlp or report_text.DEFAULT_TLP,
+            "tlp_levels": assess.tlp_levels(),
+            "downgrade_warning": report_text.TLP_DOWNGRADE,
+            "assessment": assess.form_context(name, saved, sidecar_error=error),
+        }
+
+    def same_origin(request: Request) -> bool:
+        """Whether a state-changing request came from a page this console served.
+
+        A browser attaches Origin and Sec-Fetch-Site to every cross-origin POST
+        and a script cannot strip them, so a request that carries neither Origin
+        nor Referer is a local non-browser client (the operator's own curl or a
+        script on loopback), which is allowed; anything with an origin must
+        match the Host it arrived on. The Host allow list closes the
+        DNS-rebinding path, so this needs no CSRF token and a JS-off form, which
+        the browser still sends an Origin with on a same-origin POST, keeps
+        working.
+        """
+        if request.headers.get("sec-fetch-site", "") == "cross-site":
+            return False
+        host = request.headers.get("host", "")
+        origin = request.headers.get("origin")
+        if origin == "null":
+            return False
+        if origin:
+            return origin.split("://", 1)[-1].rstrip("/") == host
+        referer = request.headers.get("referer")
+        if referer:
+            return referer.split("://", 1)[-1].split("/", 1)[0] == host
+        return True
+
+    def cross_origin_refusal() -> PlainTextResponse:
+        return PlainTextResponse(CROSS_ORIGIN_REFUSAL, status_code=403)
 
     def is_htmx(request: Request) -> bool:
         """htmx marks its own requests, so a 404 from one of them can land in the
@@ -409,6 +536,8 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     @app.post("/verdict", response_class=HTMLResponse)
     def hash_verdict(request: Request, digest: str = DIGEST_IN_FORM):
         """Ask about a digest that arrived from somewhere other than a scan."""
+        if not same_origin(request):
+            return cross_origin_refusal()
         digest = digest.strip().lower()
         verdict = None
         note = None
@@ -427,12 +556,15 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
 
     @app.post("/scan")
     def start_scan(
+        request: Request,
         url: str = Form(...),
         depth: int = Form(2),
         delay: float = Form(1.0),
         peek: bool = Form(False),
         allow_private: bool = Form(False),
     ):
+        if not same_origin(request):
+            return cross_origin_refusal()
         job = jobs.create(url.strip())
         options = ScanOptions(
             depth=depth, delay=delay, peek=peek, allow_private=allow_private
@@ -499,6 +631,7 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
                     if (note := mismatch(entry)) is not None
                 },
                 "preview": _preview(result, opened, name) if opened else None,
+                "report_ctx": report_context(name),
             },
         )
 
@@ -521,6 +654,8 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     @app.post("/runs/{name}/verdict", response_class=HTMLResponse)
     def file_verdict(request: Request, name: str, url: str):
         """Ask a public scanner about one hash, on purpose, one file at a time."""
+        if not same_origin(request):
+            return cross_origin_refusal()
         result, _ = load_run(name)
         entry = next((e for e in result.entries if e.url == url), None)
         if entry is None:
@@ -552,6 +687,8 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     @app.post("/runs/{name}/yara", response_class=HTMLResponse)
     def build_yara(request: Request, name: str, pick: list[str] = PICKED_IN_FORM):
         """A rule from the files someone ticked in the listing."""
+        if not same_origin(request):
+            return cross_origin_refusal()
         result, _ = load_run(name)
         picked = _picked(result, pick)
         return templates.TemplateResponse(
@@ -864,9 +1001,82 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
         )
 
     @app.get("/runs/{name}/report.md", response_class=PlainTextResponse)
-    def run_markdown(name: str):
-        result, candidates = load_run(name)
-        return render_markdown(result, candidates)
+    def run_markdown(
+        name: str, tlp: str | None = None, logo: str = "inline", download: str | None = None
+    ):
+        level = asked_tlp(tlp)
+        if logo not in LOGO_MODES:
+            return PlainTextResponse("The logo option takes inline or none.", status_code=400)
+        text = render_markdown(report_for(name, level), logo=logo)
+        headers = {}
+        if download:
+            headers["Content-Disposition"] = (
+                f'attachment; filename="dirsift_{name}_report.md"'
+            )
+        return PlainTextResponse(text, headers=headers)
+
+    @app.get("/runs/{name}/report.pdf")
+    def run_pdf(name: str, tlp: str | None = None):
+        level = asked_tlp(tlp)
+        data = render_pdf(report_for(name, level))
+        return Response(
+            data,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="dirsift_{name}_report.pdf"',
+                **LIVE_HEADERS,
+            },
+        )
+
+    @app.get("/runs/{name}/assessment", response_class=HTMLResponse)
+    def assessment_form(request: Request, name: str):
+        run_path(name)
+        if not run_path(name).exists():
+            raise NoSuchRun(name)
+        saved, error = read_sidecar(name)
+        return templates.TemplateResponse(
+            request, "_assessment.html", assess.form_context(name, saved, sidecar_error=error)
+        )
+
+    @app.post("/runs/{name}/assessment")
+    async def assessment_save(request: Request, name: str):
+        path = run_path(name)
+        if not same_origin(request):
+            return cross_origin_refusal()
+        if not path.exists():
+            raise NoSuchRun(name)
+        form = {key: str(value) for key, value in (await request.form()).items()}
+        with sidecar_lock:
+            saved, error = read_sidecar(name)
+            try:
+                run_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+            except OSError as exc:
+                raise NoSuchRun(name) from exc
+            result = assess.apply_form(saved, form, run_sha)
+            if result.ok and result.changed:
+                assess.save(sidecar_of(name), result.data)
+        status = 200 if result.ok else (409 if result.conflict else 422)
+        context = assess.form_context(name, result.data, result=result,
+                                      sidecar_error=error if not result.ok else None)
+        if "application/json" in request.headers.get("accept", ""):
+            return JSONResponse(
+                {
+                    "ok": result.ok,
+                    "revision": context["revision"],
+                    "version": context["version"],
+                    "changed": result.changed,
+                    "errors": result.errors,
+                    "missing": result.missing,
+                    "invalid": result.invalid,
+                    "conflict": result.conflict,
+                },
+                status_code=status,
+            )
+        if result.ok and not is_htmx(request):
+            return RedirectResponse(f"/runs/{name}#assessment", status_code=303)
+        return templates.TemplateResponse(
+            request, "_assessment.html", context, status_code=status
+        )
 
     @app.get("/runs/{name}/iocs.txt", response_class=PlainTextResponse)
     def run_iocs(name: str):
@@ -885,6 +1095,10 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             if entry.sha256
         ]
         return "\n".join(rows)
+
+    @app.exception_handler(BadTlp)
+    def bad_tlp(request: Request, exc: BadTlp):
+        return PlainTextResponse(report_text.TLP_UNKNOWN, status_code=400)
 
     @app.exception_handler(NoSuchRun)
     def no_such_run(request: Request, exc: NoSuchRun):

@@ -25,7 +25,7 @@
   {% else %}
   <form class="det-form" method="get" action="/runs/{{ name }}/detections"
         hx-get="/runs/{{ name }}/detections" hx-target="#det-panel" hx-swap="outerHTML"
-        hx-trigger="change, submit" data-det-form>
+        hx-trigger="change, submit" hx-sync="this:replace" data-det-form>
     <fieldset class="filtbar">
       <legend class="visually-hidden">Which indicators go into the rules</legend>
       <div class="fb-row">
@@ -86,6 +86,7 @@
         {% endfor %}
       </div>
     </fieldset>
+    <p class="det-busy" data-det-busy aria-hidden="true"><span class="det-busy-dot"></span>Updating the rules</p>
     <noscript><p><button class="button is-quiet" type="submit">Show</button></p></noscript>
   </form>
 

@@ -2,15 +2,29 @@
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from pathlib import Path
 
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient as _TestClient
 
+from dirsift import assessment as assess
+from dirsift import report_text
 from dirsift.enrich import MissingKey
 from dirsift.models import Entry, Ioc, ScanError, ScanResult, Verdict
 from dirsift.web import create_app
+
+
+def TestClient(app, **kw):
+    """A client whose Host is one the console answers to.
+
+    The console refuses any Host but loopback and the address it is bound to,
+    so the default ``testserver`` host would be turned away. Every client here
+    speaks to it on 127.0.0.1, the way the operator's browser does.
+    """
+    kw.setdefault("base_url", "http://127.0.0.1")
+    return _TestClient(app, **kw)
 
 BACK_TO_DASHBOARD = re.compile(r'<a[^>]*href="/"[^>]*>(?:(?!</a>).)*Back to Dashboard', re.S)
 
@@ -824,7 +838,8 @@ def test_the_run_opens_on_a_summary_strip_with_the_numbers(tmp_path: Path):
     for label in ("files", "indicators", "families", "hashed", "requests", "notes"):
         assert re.search(rf"<dt[^>]*>\s*{label}\s*</dt>", body), label
     assert "AS64496" in body
-    assert f"/runs/{name}/report.md" in body
+    assert 'href="#report"' in body
+    assert f"/runs/{name}/report.pdf" in page
 
 
 def test_a_missing_value_in_the_strip_says_none_not_a_dash(tmp_path: Path):
@@ -1418,3 +1433,270 @@ def test_the_logo_link_says_where_it_goes_and_hides_the_drawing(tmp_path: Path):
     assert 'viewBox="0 0 16 16"' in svg.group(0)
     assert 'class="brand-band"' in brand.group(1)
     assert "DIRSIFT" in brand.group(1)
+
+
+# The report and the analyst's assessment
+#
+# The assessment lives beside the run, in runs/assessments/<run>.json, so the
+# run list never sees it. A save carries the revision the form was opened at.
+
+JSON = {"accept": "application/json"}
+FORM_BASE = {
+    "revision": "0",
+    "author": "Analyst One",
+    "tlp": "AMBER",
+    "assessment": "Suspicious",
+    "confidence": "Moderate",
+    "priority": "Medium",
+    "status": "Preliminary",
+    "bottom_line": "A staging host.",
+    "rationale": "",
+    "attribution": "",
+    "found_via": "",
+}
+
+
+def report_client(tmp_path: Path):
+    name = run_with_networks(tmp_path)
+    return TestClient(create_app(tmp_path)), name
+
+
+def save(client, name, **fields):
+    data = {**FORM_BASE, **fields}
+    return client.post(f"/runs/{name}/assessment", data=data, headers=JSON)
+
+
+def test_the_markdown_route_still_answers_without_parameters(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    reply = client.get(f"/runs/{name}/report.md")
+    assert reply.status_code == 200
+    assert reply.text.startswith("**TLP:AMBER**")
+    assert "content-disposition" not in reply.headers
+
+
+def test_the_markdown_route_takes_a_tlp_a_logo_and_a_download(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    assert client.get(f"/runs/{name}/report.md?tlp=red").text.startswith("**TLP:RED**")
+    assert "<img" not in client.get(f"/runs/{name}/report.md?logo=none").text
+    reply = client.get(f"/runs/{name}/report.md?download=1")
+    assert reply.headers["content-disposition"] == (
+        f'attachment; filename="dirsift_{name}_report.md"')
+    assert client.get(f"/runs/{name}/report.md?tlp=purple").status_code == 400
+    assert client.get(f"/runs/{name}/report.md?logo=file").status_code == 400
+
+
+def test_the_pdf_route_downloads_a_named_file(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    reply = client.get(f"/runs/{name}/report.pdf?tlp=amber%2Bstrict")
+    assert reply.status_code == 200
+    assert reply.headers["content-type"] == "application/pdf"
+    assert reply.headers["content-disposition"] == (
+        f'attachment; filename="dirsift_{name}_report.pdf"')
+    assert reply.headers["cache-control"] == "no-store"
+    assert reply.content.startswith(b"%PDF-")
+    assert client.get("/runs/nope/report.pdf").status_code == 404
+
+
+def test_a_hand_typed_amber_plus_strict_is_read_as_the_label(tmp_path: Path):
+    """In a query a bare + arrives as a space."""
+    client, name = report_client(tmp_path)
+    for asked in ("amber+strict", "amber%20strict", "AMBER%20%2B%20STRICT"):
+        reply = client.get(f"/runs/{name}/report.md?tlp={asked}")
+        assert reply.status_code == 200, asked
+        assert reply.text.startswith("**TLP:AMBER+STRICT**"), asked
+    assert client.get(f"/runs/{name}/report.pdf?tlp=amber+strict").status_code == 200
+    assert client.get(f"/runs/{name}/report.md?tlp=amber+purple").status_code == 400
+
+
+def test_a_save_is_version_one_one_and_the_same_values_keep_it(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    first = save(client, name)
+    assert first.status_code == 200, first.text
+    assert first.json()["version"] == "1.1" and first.json()["changed"]
+    again = save(client, name, revision="1")
+    assert again.status_code == 200
+    assert again.json()["version"] == "1.1" and not again.json()["changed"]
+    saved = json.loads((tmp_path / "assessments" / f"{name}.json").read_text("utf-8"))
+    assert saved["revision"] == 1 and len(saved["history"]) == 1
+    assert saved["run_sha256"] and saved["history"][0]["fields"]
+
+
+def test_a_stale_revision_is_a_409(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    save(client, name)
+    stale = save(client, name, revision="0", bottom_line="Something else.")
+    assert stale.status_code == 409
+    assert stale.json()["conflict"] == assess.CONFLICT
+
+
+def test_final_needs_its_fields(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    reply = save(client, name, status="Final", author="", bottom_line="")
+    assert reply.status_code == 422
+    assert reply.json()["missing"] == ["author", "bottom_line"]
+    assert "Final needs 2 more field(s): Author, Bottom line." in reply.json()["errors"]
+    assert not (tmp_path / "assessments" / f"{name}.json").exists()
+
+
+def test_ruled_out_needs_a_reason_and_text_has_limits(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    reply = save(client, name, **{"alt-2-status": "Ruled out", "alt-2-reason": ""})
+    assert reply.status_code == 422
+    needs = assess.RULED_OUT_NEEDS.format(explanation=report_text.ALTERNATIVES[2])
+    assert needs in reply.json()["errors"]
+    long = save(client, name, bottom_line="x" * 1001)
+    assert long.status_code == 422 and "bottom_line" in long.json()["invalid"]
+    control = save(client, name, author="Ana\x07lyst")
+    assert control.status_code == 422 and "author" in control.json()["invalid"]
+    bad = save(client, name, assessment="Certainly bad")
+    assert bad.status_code == 422 and "assessment" in bad.json()["invalid"]
+
+
+def test_bidi_overrides_and_c1_controls_are_refused_plain_rtl_is_not(tmp_path: Path):
+    """An override can reverse how a shared report reads (Trojan Source)."""
+    client, name = report_client(tmp_path)
+    for sneaky in ("Q‮A", "Q‪A", "Q⁦A", "Q⁩A", "Q\x85A", "Q\x9bA"):
+        reply = save(client, name, author=sneaky)
+        assert reply.status_code == 422 and "author" in reply.json()["invalid"], repr(sneaky)
+    fine = save(client, name, rationale="مرحبا שלום ‏.")
+    assert fine.status_code == 200, fine.json()
+
+
+def test_a_write_from_another_origin_is_refused(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    data = {**FORM_BASE}
+    other = client.post(f"/runs/{name}/assessment", data=data,
+                        headers={"origin": "http://evil.example"})
+    assert other.status_code == 403
+    site = client.post(f"/runs/{name}/assessment", data=data,
+                       headers={"sec-fetch-site": "cross-site"})
+    assert site.status_code == 403
+    same = client.post(f"/runs/{name}/assessment", data=data,
+                       headers={"origin": "http://127.0.0.1", **JSON})
+    assert same.status_code == 200
+
+
+def test_a_plain_form_post_is_sent_back_to_the_run(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    reply = client.post(f"/runs/{name}/assessment", data=FORM_BASE, follow_redirects=False)
+    assert reply.status_code == 303
+    assert reply.headers["location"] == f"/runs/{name}#assessment"
+
+
+def test_the_htmx_answer_is_the_form_with_its_errors(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    reply = client.post(f"/runs/{name}/assessment", data={**FORM_BASE, "status": "Final",
+                                                           "author": ""},
+                        headers={"hx-request": "true"})
+    assert reply.status_code == 422
+    assert "Final needs 1 more field(s): Author." in reply.text
+    form = client.get(f"/runs/{name}/assessment")
+    assert form.status_code == 200 and "assessment" in form.text
+
+
+def test_the_saved_tlp_is_the_report_default(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    save(client, name, tlp="RED")
+    assert client.get(f"/runs/{name}/report.md").text.startswith("**TLP:RED**")
+    assert client.get(f"/runs/{name}/report.md?tlp=green").text.startswith("**TLP:GREEN**")
+    page = client.get(f"/runs/{name}").text
+    assert "TLP:RED" in page
+
+
+def test_the_sidecar_never_becomes_a_run(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    before = client.get("/").text.count(f"/runs/{name}")
+    save(client, name)
+    assert (tmp_path / "assessments" / f"{name}.json").exists()
+    assert client.get("/").text.count(f"/runs/{name}") == before
+    assert client.get(f"/runs/{name}.assessment").status_code == 404
+    assert client.get("/runs/assessments").status_code == 404
+
+
+def test_a_broken_sidecar_is_explained_not_a_500(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    path = tmp_path / "assessments" / f"{name}.json"
+    path.parent.mkdir()
+    path.write_text("{not json", encoding="utf-8")
+    form = client.get(f"/runs/{name}/assessment")
+    assert form.status_code == 200
+    assert "could not be read" in form.text
+    assert client.get(f"/runs/{name}/report.md").status_code == 200
+    assert client.get(f"/runs/{name}").status_code == 200
+
+
+# The Host allow list and the same-origin guard.
+# Every state-changing endpoint shares one guard: the Host must be the console's
+# own local address (a rebinding attacker's name is refused on GET too), and a
+# POST that carries a foreign Origin, or a cross-site fetch, never runs.
+
+CROSS_SITE = {"origin": "http://evil.example", "sec-fetch-site": "cross-site"}
+REBIND = {"host": "rebind.example:8802"}
+RUN_FILE = "http://127.0.0.1:8080/run.bat"
+
+
+def test_a_rebinding_host_is_turned_away_on_get_and_post(tmp_path: Path):
+    client = TestClient(create_app(tmp_path))
+    assert client.get("/", headers=REBIND).status_code == 400
+    started = client.post("/scan", data={"url": "http://127.0.0.1:9/"},
+                          headers=REBIND, follow_redirects=False)
+    assert started.status_code == 400
+    assert list(tmp_path.glob("*.json")) == []  # no scan started
+
+
+def test_the_bound_address_answers_but_a_stranger_does_not(tmp_path: Path):
+    client = TestClient(create_app(tmp_path, allowed_hosts=("dirsift.box",)),
+                        base_url="http://dirsift.box")
+    assert client.get("/").status_code == 200
+    assert client.get("/", headers={"host": "somewhere.else"}).status_code == 400
+
+
+def test_scan_refuses_a_cross_origin_post_and_starts_nothing(tmp_path: Path):
+    client = TestClient(create_app(tmp_path))
+    reply = client.post("/scan", data={"url": "http://127.0.0.1:9/"},
+                        headers=CROSS_SITE, follow_redirects=False)
+    assert reply.status_code == 403
+    assert "location" not in reply.headers
+    assert list(tmp_path.glob("*.json")) == []
+
+
+def test_a_header_less_local_scan_still_starts(tmp_path: Path):
+    client = TestClient(create_app(tmp_path))
+    started = client.post("/scan", data={"url": "http://127.0.0.1:9/"},
+                          follow_redirects=False)
+    assert started.status_code == 303
+    assert started.headers["location"].startswith("/jobs/")
+
+
+def test_the_hash_lookups_refuse_a_cross_origin_post_and_stay_offline(tmp_path: Path):
+    calls: list = []
+    name = run_with_hashes(tmp_path)
+    client = TestClient(create_app(tmp_path, lookup=stub_lookup(Verdict(found=False), calls)))
+    assert client.post("/verdict", data={"digest": "1" * 64},
+                       headers=CROSS_SITE).status_code == 403
+    assert client.post(f"/runs/{name}/verdict", params={"url": RUN_FILE},
+                       headers=CROSS_SITE).status_code == 403
+    assert calls == []  # the hash never left the machine
+
+
+def test_the_hash_lookups_run_for_a_header_less_local_request(tmp_path: Path):
+    calls: list = []
+    name = run_with_hashes(tmp_path)
+    client = TestClient(create_app(tmp_path, lookup=stub_lookup(Verdict(found=False), calls)))
+    assert client.post("/verdict", data={"digest": "1" * 64}).status_code == 200
+    assert client.post(f"/runs/{name}/verdict", params={"url": RUN_FILE}).status_code == 200
+    assert len(calls) == 2
+
+
+def test_the_yara_route_refuses_a_cross_origin_post(tmp_path: Path):
+    name = run_with_hashes(tmp_path)
+    client = TestClient(create_app(tmp_path))
+    assert client.post(f"/runs/{name}/yara", data={}, headers=CROSS_SITE).status_code == 403
+    assert client.post(f"/runs/{name}/yara", data={}).status_code == 200
+
+
+def test_the_assessment_save_refuses_a_rebinding_host(tmp_path: Path):
+    client, name = report_client(tmp_path)
+    reply = client.post(f"/runs/{name}/assessment", data={**FORM_BASE}, headers=REBIND)
+    assert reply.status_code == 400
+    assert not (tmp_path / "assessments" / f"{name}.json").exists()  # nothing written

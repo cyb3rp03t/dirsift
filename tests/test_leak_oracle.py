@@ -196,7 +196,7 @@ def test_the_zip_carries_no_piece_of_a_secret():
 @pytest.fixture
 def client(tmp_path: Path) -> TestClient:
     (tmp_path / f"{RUN}.json").write_text(leak_result().model_dump_json(), encoding="utf-8")
-    return TestClient(create_app(tmp_path))
+    return TestClient(create_app(tmp_path), base_url="http://127.0.0.1")
 
 
 def test_the_console_routes_carry_no_piece_of_a_secret(client):

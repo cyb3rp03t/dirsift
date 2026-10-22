@@ -188,6 +188,7 @@ def test_the_walk_records_the_address_it_talked_to(tmp_path: Path):
 def test_the_report_places_the_addresses_it_printed(tmp_path: Path):
     from dirsift.models import Ioc, ScanResult
     from dirsift.report import render_markdown
+    from dirsift.report_model import build_report
 
     result = ScanResult(
         root_url="http://203.0.113.24/files/",
@@ -200,8 +201,8 @@ def test_the_report_places_the_addresses_it_printed(tmp_path: Path):
         iocs=[
             Ioc(
                 ioc_type="ipv4",
-                value="198.51.100.77",
-                defanged="198[.]51[.]100[.]77",
+                value="185.234.219.44",
+                defanged="185[.]234[.]219[.]44",
                 source_url="http://203.0.113.24/files/config.json",
                 asn=64497,
                 as_name="TEST-NET-HOSTING",
@@ -209,7 +210,7 @@ def test_the_report_places_the_addresses_it_printed(tmp_path: Path):
             )
         ],
     )
-    markdown = render_markdown(result, [])
+    markdown = render_markdown(build_report(result, []))
     assert "AS64496" in markdown
     assert "EXAMPLE-HOSTING" in markdown
     assert "AS64497" in markdown

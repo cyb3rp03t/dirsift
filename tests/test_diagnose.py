@@ -115,6 +115,7 @@ def test_the_walk_keeps_the_reason_line_a_server_sent(tmp_path):
 def test_the_report_explains_its_notes_too():
     from dirsift.models import ScanError, ScanResult
     from dirsift.report import render_markdown
+    from dirsift.report_model import build_report
 
     result = ScanResult(
         root_url="http://203.0.113.24/files/",
@@ -131,9 +132,11 @@ def test_the_report_explains_its_notes_too():
             ),
         ],
     )
-    markdown = render_markdown(result, [])
+    markdown = render_markdown(build_report(result, []))
     assert "already waited and retried" in markdown
-    assert markdown.count("  _") >= 1  # the sentence sits under its note
+    # the sentence sits in the same row as its note
+    row = next(line for line in markdown.splitlines() if "| walk | HTTP 503" in line)
+    assert "already waited and retried" in row
     assert "a detail nobody has written a sentence for" in markdown
 
 

@@ -129,6 +129,10 @@
   --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.6);
   --focus-ring: 0 0 0 2px var(--ground), 0 0 0 4px var(--lamp);
   --focus-ring-inset: inset 0 0 0 2px var(--lamp);
+  /* the same ring drawn as an outline, for the native controls WebKit paints
+     without a box shadow (a select, a radio); it covers the same pixels */
+  --focus-outline: 2px solid var(--lamp);
+  --focus-offset: 2px;
   --scrim: rgba(4, 7, 12, 0.78);
   --duration-instant: 0.01ms;
   --duration-fast: 120ms;
@@ -154,6 +158,10 @@
   --case-max: 55rem;
   --dialog-w: 54rem;
   --dialog-h: 51.25rem;
+  --report-w: 46rem;
+  --report-h: 88vh;
+  --area-h: 5.5rem;
+  --area-h-lg: 8rem;
   --size-col: 4.5rem;
   --kv-key: 4rem;
   --tl-pad: 1.125rem;
@@ -164,6 +172,61 @@
   --measure-note: 62ch;
   --scroll-tall: 32rem;
   --scroll-mid: 22rem;
+
+  /* print: the light palette a report is drawn in, on paper and in the PDF.
+     Each value comes off a console hue (the ink, the line, the status tones,
+     the light mode accent of the favicon); contrast is measured on white. The
+     PDF renderer reads these from this block, so they stay plain hex here. */
+  --paper: #ffffff;
+  --paper-raised: #f3f6fb;
+  --paper-sunken: #eef2f8;
+  --rule: #c9d3e3;
+  --rule-strong: #9fb0cb;
+  --print-ink: #070b12;
+  --print-ink-2: #3d4b63;
+  --print-accent: #0a7aab;
+  --print-accent-strong: #075f86;
+  --print-accent-wash: #e2f2fa;
+  --print-alert: #b4232f;
+  --print-alert-wash: #fbe9eb;
+  --print-caution: #8a5800;
+  --print-caution-wash: #fbf1df;
+  --print-ok: #1a7a4c;
+  --print-ok-wash: #e3f4ec;
+
+  /* TLP 2.0 label colours as FIRST publishes them: the label word in its
+     colour on a black box, used for the label and nothing else */
+  --tlp-ground: #000000;
+  --tlp-red: #ff2b2b;
+  --tlp-amber: #ffc000;
+  --tlp-green: #33ff00;
+  --tlp-clear: #ffffff;
+}
+
+/* A page printed from the console takes the print palette: the console names
+   are rebound to the print tokens, so every rule below prints light without a
+   second set of selectors. */
+@media print {
+  :root {
+    --ground: var(--paper);
+    --surface-1: var(--paper);
+    --surface-2: var(--paper-raised);
+    --surface-sunken: var(--paper-sunken);
+    --line: var(--rule);
+    --line-strong: var(--rule-strong);
+    --ink: var(--print-ink);
+    --ink-2: var(--print-ink-2);
+    --lamp: var(--print-accent);
+    --lamp-ink: var(--paper);
+    --lamp-wash: var(--print-accent-wash);
+    --lamp-wash-sunken: var(--print-accent-wash);
+    --alert: var(--print-alert);
+    --alert-wash: var(--print-alert-wash);
+    --caution: var(--print-caution);
+    --caution-wash: var(--print-caution-wash);
+    --ok: var(--print-ok);
+    --ok-wash: var(--print-ok-wash);
+  }
 }
 
 *,
@@ -1998,6 +2061,49 @@ select.src-sel {
   font-size: var(--text-xs);
 }
 
+/* While the rule pack fetches a redraw it marks itself busy: the output that
+   has not changed yet is held back a little and a quiet line says it is
+   updating, so the control that already moved and the stale output below it do
+   not read as a mismatch. Set and cleared by the script; without it the form
+   just submits and the page reloads, so nothing here shows. */
+.det-busy {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+  color: var(--ink-2);
+  font-size: var(--text-2xs);
+}
+
+.det-panel.is-busy .det-busy {
+  display: inline-flex;
+}
+
+.det-busy-dot {
+  inline-size: var(--space-2);
+  block-size: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--ink-2);
+  animation: det-busy-pulse 1s var(--ease) infinite;
+}
+
+.det-panel.is-busy .rule-out,
+.det-panel.is-busy .pack-foot {
+  opacity: 0.55;
+  transition: opacity var(--duration-fast) var(--ease);
+}
+
+@keyframes det-busy-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+}
+
 /* regions and tables */
 .scroll-region {
   position: relative;
@@ -2574,6 +2680,416 @@ input.control-lg {
 
 .gap-below-3 {
   margin-block-end: var(--space-3);
+}
+
+/* report: the window a report is taken from. Without the script it is the
+   last part of the run page, reached by the Report link; with it, it floats over
+   the page as a dialog, the same way a file preview does. The analyst form folds
+   inside it. */
+.report-sheet {
+  margin-block-start: var(--space-6);
+  background: var(--surface-1);
+  border: var(--border-hair) solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.report-sheet .sheet-bar {
+  display: flex;
+  border-start-start-radius: var(--radius-card);
+  border-start-end-radius: var(--radius-card);
+}
+
+.report-sheet .sheet-name {
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  white-space: normal;
+}
+
+.report-sheet .sheet-close,
+.report-sheet .js-only {
+  display: none;
+}
+
+.js .report-sheet .sheet-close {
+  display: inline-grid;
+}
+
+.js .report-sheet .js-only {
+  display: inline-flex;
+}
+
+.js .report-sheet .no-js-only {
+  display: none;
+}
+
+.report-sheet .js-only-block {
+  display: none;
+}
+
+.js .report-sheet .js-only-block {
+  display: block;
+}
+
+.js .report-sheet {
+  display: none;
+}
+
+.js .report-sheet.is-open {
+  position: fixed;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  inline-size: min(var(--report-w), 94vw);
+  max-block-size: var(--report-h);
+  margin: 0;
+  overflow: clip; /* hidden would still let focus scroll the bar away */
+  transform: translate(-50%, -50%);
+  border-color: var(--line-strong);
+  border-radius: var(--radius-dialog);
+}
+
+.report-body {
+  display: grid;
+  gap: var(--space-5);
+  min-block-size: 0;
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.report-body > * {
+  min-inline-size: 0;
+}
+
+.report-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.report-form legend,
+.assess legend {
+  margin-block-end: var(--space-2);
+  padding: 0;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
+/* A choice is a real radio inside a bordered label, so the whole label is the
+   target and the radio still speaks for itself. */
+.choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--control-h-target);
+  padding-inline: var(--space-3);
+  border: var(--border-hair) solid var(--line-strong);
+  border-radius: var(--radius-control);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.choice:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.choice:has(input:checked) {
+  border-color: var(--ink);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: var(--weight-bold);
+}
+
+/* The radio keeps its own focus ring (the shared focus-visible rule). */
+input[type="radio"] {
+  inline-size: var(--icon);
+  block-size: var(--icon);
+  margin: 0;
+  accent-color: var(--ink);
+}
+
+/* TLP labels as FIRST draws them: the label word in its colour on a black box.
+   The box is the same on the dark console and on paper. */
+.tlp-label {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--control-h-xs);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-control);
+  background: var(--tlp-ground);
+  color: var(--tlp-clear);
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-mark);
+  white-space: nowrap;
+}
+
+.tlp-label.is-red {
+  color: var(--tlp-red);
+}
+
+.tlp-label.is-amber,
+.tlp-label.is-amber-strict {
+  color: var(--tlp-amber);
+}
+
+.tlp-label.is-green {
+  color: var(--tlp-green);
+}
+
+.tlp-pick {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.tlp-pick select {
+  inline-size: auto;
+  max-inline-size: 100%;
+  min-inline-size: var(--control-w-md);
+  justify-self: start;
+}
+
+.tlp-def {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  max-inline-size: var(--measure);
+}
+
+.tlp-def > span:last-child {
+  flex: 1 1 var(--control-w-md);
+  min-inline-size: 0;
+}
+
+.tlp-def[hidden],
+.report-warn[hidden] {
+  display: none;
+}
+
+.report-note {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+  max-inline-size: var(--measure-note);
+}
+
+.report-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.report-acts .copy {
+  min-block-size: var(--control-h);
+  padding-inline: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+/* the analyst assessment: a fold under the report choices */
+.assess {
+  border: var(--border-hair) solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface-sunken);
+}
+
+.assess > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--touch-h);
+  padding: var(--space-2) var(--space-3);
+  color: var(--ink);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+  list-style: none;
+}
+
+.assess > summary::-webkit-details-marker {
+  display: none;
+}
+
+.assess > summary::before {
+  content: "+";
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--space-4);
+  block-size: var(--space-4);
+  border: var(--border-hair) solid var(--line-strong);
+  border-radius: var(--radius-control);
+  color: var(--ink-2);
+  font-family: var(--font-data);
+  line-height: 1;
+}
+
+.assess[open] > summary::before {
+  content: "\2212";
+}
+
+.assess[open] > summary {
+  border-block-end: var(--border-hair) solid var(--line);
+}
+
+.assess-sub {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+}
+
+.assess-form {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-3);
+}
+
+.assess-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--control-w-md)), 1fr));
+  gap: var(--space-4);
+}
+
+.assess .field > .label {
+  color: var(--ink);
+}
+
+.field-help {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+
+.icd {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-hair) solid var(--line);
+  border-radius: var(--radius-panel);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+
+.icd ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.icd b {
+  color: var(--ink);
+  font-weight: var(--weight-bold);
+}
+
+textarea {
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: var(--area-h);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-sunken);
+  color: var(--ink);
+  border: var(--border-hair) solid var(--line-strong);
+  border-radius: var(--radius-control);
+  font: inherit;
+  line-height: var(--leading-body);
+  resize: vertical;
+}
+
+textarea.is-tall {
+  min-block-size: var(--area-h-lg);
+}
+
+textarea:hover {
+  border-color: var(--ink-2);
+}
+
+textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* In the report window every field shows the ring on plain focus. WebKit
+   paints no box shadow on a native select or radio, so those two also carry
+   the ring as an outline over the same pixels. */
+.report-sheet :is(input, select, textarea):focus {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.report-sheet :is(select, input[type="radio"]):focus {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+textarea[aria-invalid="true"],
+select[aria-invalid="true"] {
+  border-color: var(--alert);
+}
+
+.alt-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alt-item {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--border-hair) solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface-1);
+}
+
+.alt-item > p {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+.alt-item select {
+  inline-size: auto;
+  max-inline-size: 100%;
+  justify-self: start;
+}
+
+.form-errors ul {
+  margin: var(--space-1) 0 0;
+  padding-inline-start: var(--space-4);
+}
+
+.assess-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
 }
 
 /* responsive */

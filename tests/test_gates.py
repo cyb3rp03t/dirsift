@@ -418,3 +418,131 @@ def test_the_focus_ring_shows_outside_its_gap() -> None:
     spreads = [float(layer[3].removesuffix("px")) for layer in layers]
     assert len(spreads) == 2
     assert spreads[1] > spreads[0]
+
+# The print layer. A report printed from the console and the PDF the renderer
+# draws share one palette: the print tokens live in the same :root block as the
+# console tokens, derived from their hues, and a print media rule binds the
+# console names to them. The PDF renderer reads these values from this block.
+
+PRINT_TOKENS = {
+    "--paper": "#ffffff",
+    "--paper-raised": "#f3f6fb",
+    "--paper-sunken": "#eef2f8",
+    "--rule": "#c9d3e3",
+    "--rule-strong": "#9fb0cb",
+    "--print-ink": "#070b12",
+    "--print-ink-2": "#3d4b63",
+    "--print-accent": "#0a7aab",
+    "--print-accent-strong": "#075f86",
+    "--print-accent-wash": "#e2f2fa",
+    "--print-alert": "#b4232f",
+    "--print-alert-wash": "#fbe9eb",
+    "--print-caution": "#8a5800",
+    "--print-caution-wash": "#fbf1df",
+    "--print-ok": "#1a7a4c",
+    "--print-ok-wash": "#e3f4ec",
+    "--ground": "#070b12",
+    "--ink": "#e9eefa",
+    "--lamp": "#56c7f2",
+    "--tlp-ground": "#000000",
+    "--tlp-red": "#ff2b2b",
+    "--tlp-amber": "#ffc000",
+    "--tlp-green": "#33ff00",
+    "--tlp-clear": "#ffffff",
+}
+
+# The console names a printed page rebinds, and the print token each one takes.
+PRINT_BINDINGS = {
+    "--ground": "--paper",
+    "--surface-1": "--paper",
+    "--surface-2": "--paper-raised",
+    "--surface-sunken": "--paper-sunken",
+    "--line": "--rule",
+    "--line-strong": "--rule-strong",
+    "--ink": "--print-ink",
+    "--ink-2": "--print-ink-2",
+    "--lamp": "--print-accent",
+    "--lamp-ink": "--paper",
+    "--lamp-wash": "--print-accent-wash",
+    "--lamp-wash-sunken": "--print-accent-wash",
+    "--alert": "--print-alert",
+    "--alert-wash": "--print-alert-wash",
+    "--caution": "--print-caution",
+    "--caution-wash": "--print-caution-wash",
+    "--ok": "--print-ok",
+    "--ok-wash": "--print-ok-wash",
+}
+
+ROOT_HEX = re.compile(r"(--[a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{3,8})\s*;")
+
+
+def _top_root_block(css: str) -> str:
+    """The first top level :root block, the one the PDF token reader reads."""
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    start = re.search(r"(?m)^:root\s*\{", css)
+    assert start, "no top level :root block"
+    return css[start.end() : css.index("}", start.end())]
+
+
+def test_there_is_one_top_level_root_block() -> None:
+    css = re.sub(r"/\*.*?\*/", "", _css(), flags=re.S)
+    assert len(re.findall(r"(?m)^:root\s*\{", css)) == 1
+
+
+def test_every_print_token_is_in_the_root_block_with_its_value() -> None:
+    found = {name: value.lower() for name, value in ROOT_HEX.findall(_top_root_block(_css()))}
+    missing = [name for name in PRINT_TOKENS if name not in found]
+    assert missing == [], f"print tokens missing from :root: {missing}"
+    wrong = {n: found[n] for n, v in PRINT_TOKENS.items() if found[n] != v}
+    assert wrong == {}, f"print tokens with a value off the table: {wrong}"
+
+
+def test_print_media_binds_the_console_tokens_to_the_print_tokens() -> None:
+    decls = css_declarations(_css())
+    printed = {
+        prop: value
+        for prelude, prop, value in decls
+        if prelude.startswith("@media print") and ":root" in prelude
+    }
+    for console, paper in PRINT_BINDINGS.items():
+        assert printed.get(console) == f"var({paper})", (console, printed.get(console))
+    assert all(v.startswith("var(--") for v in printed.values()), printed
+
+
+# The report window and the assessment form. The scaffold that used to close a
+# report is gone for good, and every control in the two templates is named by a
+# label that points at it, so a screen reader never meets a bare field.
+
+REPORT_TEMPLATES = (WEB / "templates" / "_report.html", WEB / "templates" / "_assessment.html")
+CONTROL = re.compile(r"<(input|select|textarea)\b([^>]*)>", re.S)
+
+
+def test_the_report_templates_carry_no_scaffold() -> None:
+    for template in REPORT_TEMPLATES:
+        text = template.read_text(encoding="utf-8").lower()
+        assert "scaffold" not in text and "writeup" not in text, template.name
+
+
+def test_every_report_control_has_a_label() -> None:
+    for template in REPORT_TEMPLATES:
+        html = template.read_text(encoding="utf-8")
+        labelled = set(re.findall(r"""<label\b[^>]*\bfor="([^"]+)\"""", html))
+        for tag, attrs in CONTROL.findall(html):
+            if 'type="hidden"' in attrs or 'type="radio"' in attrs:
+                continue  # hidden fields have no face; radios sit inside their label
+            found = re.search(r'\bid="([^"]+)"', attrs)
+            assert found, f"{template.name}: a {tag} without an id"
+            assert found.group(1) in labelled, f"{template.name}: {found.group(1)} has no label"
+
+
+def test_the_rule_pack_keeps_the_last_choice_and_says_it_is_busy() -> None:
+    """The rule pack form redraws its own panel; a newer change must cancel the
+    older request so the last choice wins, and the busy line shows only while a
+    redraw is in flight."""
+    html = (WEB / "templates" / "_detections.html").read_text(encoding="utf-8")
+    form = re.search(r"<form[^>]*data-det-form[^>]*>", html, re.S)
+    assert form and 'hx-sync="this:replace"' in form.group(0)
+    assert "data-det-busy" in html
+    found = css_declarations(_css())
+    assert (".det-busy", "display", "none") in found
+    assert (".det-panel.is-busy .det-busy", "display", "inline-flex") in found
