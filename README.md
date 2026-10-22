@@ -1,4 +1,9 @@
-# DirSift
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/dirsift-lockup-dark.svg">
+    <img src="docs/dirsift-lockup-light.svg" alt="DirSift" width="324" height="88">
+  </picture>
+</h1>
 
 [![CI](https://github.com/cyb3rp03t/dirsift/actions/workflows/ci.yml/badge.svg)](https://github.com/cyb3rp03t/dirsift/actions/workflows/ci.yml)
 
@@ -173,6 +178,11 @@ dirsift rules run.json --name install.bat
 # the run as a STIX 2.1 bundle for a platform, written to a file and nowhere else
 dirsift stix run.json -o run.stix.json
 
+# hunts and candidate block lists: Sigma, Splunk, KQL, plain lists, CSV, STIX, YARA
+dirsift detections run.json --list
+dirsift detections run.json --target sigma -o hunts/
+dirsift detections run.json --target all --tlp GREEN -o hunts.zip
+
 # ask a public scanner about one digest, which is the only call that leaves
 dirsift check 13565af72d91125920826dd15db83bd6e48aecc1a466b9a639a6780eaf037342
 
@@ -211,10 +221,40 @@ address, domain and URL lifted out of them, tied to the file it came from.
 There is no Malware object and no verdict in it. DirSift collects; whether any
 of this is hostile is decided on the platform, by whoever reads it there.
 
+The STIX file in the rule pack is filtered like every other format: private and
+reserved addresses, public resolvers, shared hosts and any value that carries
+part of a secret are left out. `dirsift stix RUN` writes the whole run.
+
 A platform matches live values, so the bundle carries them undefanged. That is
 why it is only ever written to the file you name, never to the terminal.
 Identifiers are deterministic: importing the same run twice adds nothing the
 second time, and an address found in two runs lands on the same object.
+
+### Hunts and block lists
+
+`detections` writes the same indicators in the shapes other tools read: a Sigma
+rule collection (firewall, DNS, proxy and process creation log sources), Splunk
+searches over the CIM data models, KQL for Microsoft Defender XDR and Sentinel,
+plain one value per line block lists (IPv4, IPv6, domain, URL, SHA256) for
+firewall external lists and threat feeds, a CSV for SOAR and TIP imports, the
+STIX bundle and YARA. Every file says which log source it assumes, carries the
+TLP label you pick (AMBER unless told otherwise) and is a file only: nothing is
+sent to any product.
+
+One filter runs before every format, and the files and the console count what it
+left out and why: private, reserved, multicast and documentation addresses,
+reserved names, protocol strings such as SSH algorithm names, public resolvers,
+the hash of an empty file. A host many people share, such as GitHub or an S3
+bucket, enters as a full URL only, never as a host to block. The scanned server
+itself is labelled as the target. Wallets, mutexes and paths stay in YARA only.
+A secret DirSift recognises (a key block, a cloud or chat token, a value assigned
+to a name such as `password` or `aws_secret_access_key`) enters no file at all,
+YARA included, and the indicator list, the report and the run page name it by
+kind, length and the start of its sha256 instead of quoting it. A secret it does
+not recognise is text like any other.
+
+The files carry live values, so `-o` is required and nothing is printed. In the
+console the preview is defanged; copy and download give the live file.
 
 ### Finding the siblings
 

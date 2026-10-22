@@ -1,0 +1,9 @@
+# dirsift candidate block list, url
+# dirsift run golden-run | author cyb3rp03t | TLP:AMBER
+# target hxxp://panel-gate[.]xyz/files/ | scan started 2026-10-01T09:00:00.000Z
+# Found in an open directory, not a verdict: hunt with it, decide yourself.
+# assumes a URL list without the scheme (Palo Alto EDL URL, Fortinet URL feed)
+# live values, not defanged: import it, do not open it in a browser or paste it in a chat.
+c2.evil-update.top/gate.php?id=1&k=*
+panel-gate.xyz/files/
+raw.githubusercontent.com/someone/tools/main/x.ps1

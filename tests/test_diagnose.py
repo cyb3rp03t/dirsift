@@ -77,7 +77,7 @@ def test_a_server_error_is_the_target_breaking_not_the_scan():
     assert "target" in note.lower() or "server" in note.lower()
 
 
-# -- the note the walk writes ----------------------------------------------
+# The note the walk writes
 
 
 def test_the_walk_keeps_the_reason_line_a_server_sent(tmp_path):

@@ -39,6 +39,8 @@ dirsift = "dirsift.cli:app"
 dev = [
     "pytest>=9.1,<10",
     "pytest-asyncio>=1.4,<2",
+    # Parses the Sigma output in the tests. MIT; the tool itself writes YAML by hand.
+    "pyyaml>=6.0,<7",
     "ruff>=0.16,<0.17",
     "stix2>=3.0,<4",
     # 3.3.1 on PyPI ships without its JSON schemas, so it cannot validate anything.

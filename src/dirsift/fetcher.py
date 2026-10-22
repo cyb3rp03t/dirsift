@@ -199,7 +199,7 @@ class PoliteFetcher:
             trust_env=True,
         )
 
-    # -- lifecycle ---------------------------------------------------------
+    # Lifecycle
 
     def __enter__(self) -> PoliteFetcher:
         return self
@@ -210,7 +210,7 @@ class PoliteFetcher:
     def close(self) -> None:
         self._client.close()
 
-    # -- internals ---------------------------------------------------------
+    # Internals
 
     def _wait(self) -> None:
         gap = time.monotonic() - self._last_request
@@ -228,7 +228,7 @@ class PoliteFetcher:
         except ValueError:
             return 30.0
 
-    # -- public surface ----------------------------------------------------
+    # Public surface
 
     def get(self, url: str, *, max_bytes: int | None = None) -> Response:
         """Fetch ``url``, streaming the body and cutting it at ``max_bytes``.

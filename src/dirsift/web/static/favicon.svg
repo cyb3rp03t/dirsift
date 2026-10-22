@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-label="DirSift">
+<title>DirSift</title>
+<style>.k{fill:#070b12}.a{fill:#0a7aab}
+@media (prefers-color-scheme: dark){.k{fill:#e9eefa}.a{fill:#56c7f2}}</style>
+<path class="k" fill-rule="evenodd" d="M1 1h11l3 3v1h-2l-2-2H3v4h12v5l-3 3H1v-4h2v2h8l2-2V9H1z"/>
+<path class="a" fill-rule="evenodd" d="M3 7h10v2H3z"/>
+</svg>

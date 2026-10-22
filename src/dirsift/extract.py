@@ -19,13 +19,14 @@ Three things matter more than the regex list:
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import re
 from urllib.parse import urlparse
 
 from .models import Ioc
 
-# --- refang ---------------------------------------------------------------
+# Refang
 
 _REFANG_PATTERNS = [
     (re.compile(r"h\s*x\s*x\s*p", re.I), "http"),
@@ -55,9 +56,39 @@ def defang_text(text: str) -> str:
     in reports and chat windows where a live link is a liability.
     """
     text = re.sub(r"\bhttp(s?)://", r"hxxp\1://", text, flags=re.I)
+    text = re.sub(r"\bftp://", "fxp://", text, flags=re.I)
     text = _IPV4.sub(lambda m: m.group(0).replace(".", "[.]"), text)
     text = _DOMAIN.sub(lambda m: m.group(0).replace(".", "[.]"), text)
+    # A host whose suffix is not on the list above is still a host when it
+    # sits after an @, after a scheme, or before a port or a path.
+    text = _MAIL_HOST.sub(lambda m: m.group(1) + m.group(2).replace(".", "[.]"), text)
+    text = _HOST_IN_PLACE.sub(lambda m: m.group(0).replace(".", "[.]"), text)
+    text = _IPV6_LOOSE.sub(_defang_ipv6, text)
     return text
+
+
+#: The domain after an @, whatever its suffix.
+_MAIL_HOST = re.compile(r"(@)((?:[a-z0-9-]+\.)+[a-z]{2,63})(?![\w-])", re.I)
+#: A dotted name right after ``//`` or right before a port or a path.
+_HOST_IN_PLACE = re.compile(
+    r"(?:(?<=//)(?:[a-z0-9-]+\.)+[a-z]{2,63}(?![\w-])"
+    r"|(?<![\w.\[\]-])(?:[a-z0-9-]+\.)+[a-z]{2,63}(?=:\d|/))",
+    re.I,
+)
+#: Anything shaped like an IPv6 address, compressed or not; checked before it is touched.
+_IPV6_LOOSE = re.compile(r"(?<![\w:])[0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7}(?![\w:])", re.I)
+
+
+def _defang_ipv6(match: re.Match[str]) -> str:
+    candidate = match.group(0)
+    try:
+        if ipaddress.ip_address(candidate).version == 6 and any(
+            char.isalnum() for char in candidate
+        ):
+            return candidate.replace(":", "[:]")
+    except ValueError:
+        pass
+    return candidate
 
 
 def defang(value: str) -> str:
@@ -68,7 +99,7 @@ def defang(value: str) -> str:
     return value.replace("hxxp[.]", "hxxp.").replace("hxxps[.]", "hxxps.")
 
 
-# --- patterns -------------------------------------------------------------
+# Patterns
 
 _IPV4 = re.compile(r"(?<![\w.])((?:\d{1,3}\.){3}\d{1,3})(?::(\d{1,5}))?(?![\w.])")
 _IPV6 = re.compile(r"(?<![\w:])(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}(?![\w:])")
@@ -112,7 +143,17 @@ _SECRETS: list[tuple[str, re.Pattern[str]]] = [
     ("slack_token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,72}\b")),
     ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
     ("stripe_key", re.compile(r"\b[sr]k_(?:live|test)_[0-9A-Za-z]{16,99}\b")),
-    ("private_key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY")),
+    # The whole block, BEGIN to END, or to the end of what was read when the
+    # read stopped inside it: the body is the secret, not the header line.
+    (
+        "private_key",
+        re.compile(
+            r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?"
+            r"(?:-----)?[\s\S]*?"
+            r"(?:-----END (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?"
+            r"PRIVATE KEY(?: BLOCK)?-----|\Z)"
+        ),
+    ),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")),
     (
         "discord_webhook",
@@ -120,13 +161,54 @@ _SECRETS: list[tuple[str, re.Pattern[str]]] = [
     ),
 ]
 
-#: Assignments like ``password = "hunter2"`` or ``"api_key": "..."``.
+#: Assignments like ``password = "hunter2"``, ``"api_key": "..."`` or
+#: ``aws_secret_access_key = ...``. The key is any name; whether it names a
+#: secret is decided word by word in ``_names_secret``.
 _ASSIGNED_SECRET = re.compile(
-    r"""(?P<key>\b(?:pass(?:word|wd)?|passwd|pwd|secret|api[_-]?key|apikey|token|
-        auth|bot[_-]?token|license|serial|webhook)\b)
+    r"""(?<![\w.])(?P<key>[A-Za-z_][\w.-]{0,63})["']?
         \s*[:=]\s*["']?(?P<value>[^\s"',;}]{6,120})""",
-    re.I | re.X,
+    re.X,
 )
+
+#: A word that makes the key a secret wherever it stands in it.
+_SECRET_WORDS = {
+    "password", "passwd", "passphrase", "pwd", "secret", "token", "apikey",
+    "credential", "credentials",
+}
+#: A word that does so only as the last word of the key: ``db_pass`` is a
+#: secret, ``pass_through`` is not.
+_SECRET_LAST_WORDS = {"pass", "auth", "license", "serial", "webhook"}
+#: Two words that do so side by side.
+_SECRET_PAIRS = {("api", "key"), ("license", "key"), ("bot", "token")}
+#: A last word that says the value is about the secret, not the secret itself
+#: (``token_url``, ``password_policy``), or a file name (``secret_santa.txt``).
+_NOT_SECRET_LAST_WORDS = {
+    "url", "uri", "endpoint", "host", "file", "path", "dir", "policy", "length",
+    "len", "min", "max", "hint", "prompt", "label", "field", "name", "type", "mode",
+    "id", "expiry", "expires", "expiration", "ttl", "timeout", "enabled", "required",
+    "reset", "format", "pattern", "regex", "header", "count", "size", "version",
+    "algorithm", "method", "list",
+    "txt", "log", "csv", "bak", "zip", "pdf", "doc", "docx", "html", "htm", "php",
+    "js", "py", "sh", "ps1", "json", "xml", "yml", "yaml", "ini", "cfg", "conf",
+}
+
+
+def _key_words(key: str) -> list[str]:
+    """``aws_secret_access_key``, ``x-api-key`` and ``dbPassword``, split into words."""
+    words: list[str] = []
+    for part in re.split(r"[_.\-]+", key):
+        words += [w.lower() for w in re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+", part)]
+    return words
+
+
+def _names_secret(key: str) -> bool:
+    """Whether a key such as ``client_secret`` or ``DB_PASSWORD`` names a secret."""
+    words = _key_words(key)
+    if not words or words[-1] in _NOT_SECRET_LAST_WORDS:
+        return False
+    if words[-1] in _SECRET_LAST_WORDS or any(word in _SECRET_WORDS for word in words):
+        return True
+    return any(pair in _SECRET_PAIRS for pair in zip(words, words[1:], strict=False))
 
 #: Execution tells: not indicators, but they say what the script is for.
 EXECUTION_TELLS = [
@@ -148,6 +230,23 @@ _NOISE_SECRET_VALUES = {
     "password", "changeme", "your_token_here", "xxxxx", "none", "null", "true",
     "false", "undefined", "your_api_key", "insert_key_here", "todo",
 }
+
+
+def _assignments(text: str) -> list[re.Match[str]]:
+    """Every ``key = value`` whose key names a secret.
+
+    A key that names nothing secret gives its value back to the search, so the
+    ``token=`` inside ``url=http://host/?token=...`` is still found.
+    """
+    found = []
+    position = 0
+    while match := _ASSIGNED_SECRET.search(text, position):
+        if _names_secret(match.group("key")):
+            found.append(match)
+            position = match.end()
+        else:
+            position = match.end("key")
+    return found
 
 
 def _is_link(value: str) -> bool:
@@ -186,6 +285,11 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
 
     def add(ioc_type: str, value: str, start: int, end: int, label: str | None = None) -> None:
         value = value.rstrip(".,;:)\"'")
+        if chr(10) in value:
+            # A block over several lines: the context is its first line only,
+            # so the body does not travel in the context as well.
+            value = value.strip()
+            end = start + value.find(chr(10))
         if not value:
             return
         ioc = Ioc(
@@ -237,9 +341,12 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
         for match in pattern.finditer(working):
             add("secret", match.group(0), *match.span(), label=label)
 
-    for match in _ASSIGNED_SECRET.finditer(working):
+    for match in _assignments(working):
         value = match.group("value")
         if value.lower() in _NOISE_SECRET_VALUES or value.startswith(("$", "%", "{", "<")):
+            continue
+        if "(" in value:
+            # A lookup such as os.environ.get( names where the secret is kept.
             continue
         add("secret", value, *match.span(), label=match.group("key").lower())
 
@@ -281,8 +388,169 @@ def dedupe_iocs(iocs: list[Ioc]) -> list[Ioc]:
     return sorted(out.values(), key=lambda i: (order.get(i.ioc_type, 99), i.value))
 
 
+#: How long a piece of a secret has to be before it counts as carrying it.
+SECRET_PIECE = 8
+
+
+def secret_material(ioc: Ioc) -> str:
+    """The part of a secret indicator that is actually secret.
+
+    A link keeps everything after its host (``https://`` and the host name are
+    public); a private key block keeps its body, not the BEGIN and END lines
+    every key shares. Anything else is secret whole.
+    """
+    value = ioc.value
+    if _is_link(value):
+        parsed = urlparse(value)
+        return value.split(parsed.netloc, 1)[-1] if parsed.netloc else value
+    if ioc.label == "private_key":
+        body = [line for line in value.splitlines() if not line.startswith("-----")]
+        return "\n".join(body)
+    return value
+
+
+class SecretPieces:
+    """Every piece of the run's secrets, to ask whether a text carries any of one.
+
+    Fails closed: eight characters of a secret in a text is enough, so a rule
+    or a list built from a line cut around the secret still trips it.
+    """
+
+    def __init__(self, iocs: list[Ioc]) -> None:
+        self.pieces: set[str] = set()
+        self.short: set[str] = set()
+        for ioc in iocs:
+            if ioc.ioc_type != "secret" or not ioc.value:
+                continue
+            for part in secret_material(ioc).splitlines() or [ioc.value]:
+                part = part.strip()
+                if not part:
+                    continue
+                if len(part) < SECRET_PIECE:
+                    self.short.add(part)
+                    continue
+                for start in range(len(part) - SECRET_PIECE + 1):
+                    self.pieces.add(part[start : start + SECRET_PIECE])
+
+    def __bool__(self) -> bool:
+        return bool(self.pieces or self.short)
+
+    def carried_by(self, text: str) -> bool:
+        if not text:
+            return False
+        if any(part in text for part in self.short):
+            return True
+        if not self.pieces:
+            return False
+        return any(
+            text[start : start + SECRET_PIECE] in self.pieces
+            for start in range(len(text) - SECRET_PIECE + 1)
+        )
+
+
 def execution_tells(text: str) -> list[str]:
     """Which command-shaped strings appear in this file, in order of appearance."""
     lowered = text.lower()
     hits = [(lowered.find(tell), tell.strip()) for tell in EXECUTION_TELLS if tell in lowered]
     return [tell for _, tell in sorted(hits)]
+
+
+
+#: How many characters of a known opening a shown secret keeps. Each is the
+#: fixed part every key of that kind starts with, never the secret itself, and
+#: all are shorter than ``SECRET_PIECE``.
+_FIXED_OPENING = {
+    "aws_access_key": 4,
+    "github_token": 4,
+    "slack_token": 5,
+    "google_api_key": 4,
+    "stripe_key": 7,
+    "jwt": 3,
+}
+
+#: What stands in for a line that carries part of a secret it does not hold whole.
+WITHHELD = "withheld: carries part of a secret"
+
+
+def _secret_opening(ioc: Ioc) -> str:
+    """The part of a secret that says what it is and is not secret."""
+    value = ioc.value.strip()
+    if ioc.label == "private_key":
+        # The BEGIN line every key of the kind shares, without its dashes, and
+        # only that: a key escaped into one JSON line goes on after it.
+        header = re.search(r"BEGIN [A-Z ]*?PRIVATE KEY(?: BLOCK)?", value)
+        return header.group(0) if header else ""
+    if _is_link(value):
+        parsed = urlparse(value)
+        if not parsed.netloc:
+            return ""
+        base = f"{parsed.scheme}://{parsed.netloc}/"
+        if "/api/webhooks/" in parsed.path:
+            base += "api/webhooks/"
+        return defang(base)
+    keep = _FIXED_OPENING.get(ioc.label or "", 0)
+    return value[:keep]
+
+
+def secret_shown(ioc: Ioc) -> str:
+    """A secret as it may be shown or exported: one line, none of it quoted.
+
+    The kind, the fixed opening that says what it is (a PEM BEGIN line, ``AKIA``,
+    the webhook path), its length and the start of its sha256, so two runs or
+    two files holding the same secret can be matched without either quoting it.
+    """
+    value = ioc.value.strip()
+    label = re.sub(r"[^a-z0-9_.-]+", "_", (ioc.label or "secret").lower()) or "secret"
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+    parts = [label, _secret_opening(ioc), f"{len(value)} chars", f"sha256:{digest}"]
+    return "  ".join(part for part in parts if part)
+
+
+class SecretMask:
+    """Shows a run's indicators and context lines with every secret named, not quoted.
+
+    A secret held whole in a text is replaced by its shown form. A text left
+    with a piece of a secret after that is withheld whole: fails closed, like
+    ``SecretPieces``. The run itself is not changed; this is for display and
+    export only.
+    """
+
+    def __init__(self, iocs: list[Ioc]) -> None:
+        secrets = [ioc for ioc in iocs if ioc.ioc_type == "secret" and ioc.value.strip()]
+        self.pieces = SecretPieces(secrets).pieces
+        self.forms: dict[str, str] = {}
+        for ioc in secrets:
+            shown = secret_shown(ioc)
+            # As stored, and as a context line carries it: the prose pass
+            # defangs the dots of a token, so ``eyJ...`` reads ``eyJ...[.]``.
+            forms = (ioc.value, ioc.defanged, defang_text(ioc.value.strip()))
+            for form in {*forms, *(form.strip() for form in forms)}:
+                if form:
+                    self.forms.setdefault(form, shown)
+        ordered = sorted(self.forms, key=len, reverse=True)
+        self.pattern = re.compile("|".join(map(re.escape, ordered))) if ordered else None
+
+    def _carries_piece(self, text: str) -> bool:
+        return any(
+            text[start : start + SECRET_PIECE] in self.pieces
+            for start in range(len(text) - SECRET_PIECE + 1)
+        )
+
+    def text(self, text: str | None) -> str:
+        """A line safe to show: secrets named in brackets, or withheld whole."""
+        if not text:
+            return ""
+        if self.pattern is None:
+            return text
+        whole = self.forms.get(text.strip())
+        if whole:
+            return whole
+        if self._carries_piece(self.pattern.sub(chr(0), text)):
+            return WITHHELD
+        return self.pattern.sub(lambda match: "[" + self.forms[match.group(0)] + "]", text)
+
+    def indicator(self, ioc: Ioc) -> str:
+        """An indicator as a list shows it: defanged, and a secret by its shown form."""
+        if ioc.ioc_type == "secret":
+            return secret_shown(ioc)
+        return self.text(ioc.defanged)

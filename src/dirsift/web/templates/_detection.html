@@ -1,0 +1,12 @@
+{#- One target's preview, defanged. The live text never enters the page: copy and
+    download fetch it from the download route. -#}
+<div class="det-preview" data-det-preview="{{ target.id }}">
+  {% if note %}<p class="quiet out-note">{{ note }}</p>{% endif %}
+  {% if empty %}<p class="quiet out-note">No indicator is left after the filters; the file says so in a comment.</p>{% endif %}
+  {% if assumes %}
+  <ul class="assumes">
+    {% for line in assumes %}<li>{{ line }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <pre class="src" tabindex="0" role="region" aria-label="Preview of {{ target.filename }}, defanged">{{ preview }}</pre>
+</div>

@@ -99,7 +99,7 @@
     <button type="button" class="tab" role="tab" id="tab-hex"
             aria-controls="panel-hex" aria-selected="false">Hex</button>
     <button type="button" class="tab" role="tab" id="tab-links"
-            aria-controls="panel-links" aria-selected="false">Links</button>
+            aria-controls="panel-links" aria-selected="false">Links <span class="count">{{ iocs | length }}</span></button>
   </div>
 
   <div class="tab-panel" role="tabpanel" id="panel-contents" aria-labelledby="tab-contents">
@@ -181,9 +181,10 @@
     <h3 class="section-title">Named by</h3>
     <p class="button-row">
       {% for other in referenced_by %}
-      <button type="button" class="link-button" data-file-url="{{ other.url }}"
-              hx-get="/runs/{{ name }}/file?url={{ other.url | urlencode }}"
-              hx-target="#preview" hx-swap="innerHTML">{{ other.name }}</button>
+      <a class="link-button" href="/runs/{{ name }}?file={{ other.url | urlencode }}#preview-sheet"
+         data-file-url="{{ other.url }}"
+         hx-get="/runs/{{ name }}/file?url={{ other.url | urlencode }}"
+         hx-target="#preview" hx-swap="innerHTML">{{ other.name }}</a>
       {% endfor %}
     </p>
     {% endif %}
@@ -193,9 +194,10 @@
     <div class="grid">
       {% for other in siblings %}
       <div class="button-row">
-        <button type="button" class="link-button" data-file-url="{{ other.url }}"
-                hx-get="/runs/{{ name }}/file?url={{ other.url | urlencode }}"
-                hx-target="#preview" hx-swap="innerHTML">{{ other.name }}</button>
+        <a class="link-button" href="/runs/{{ name }}?file={{ other.url | urlencode }}#preview-sheet"
+           data-file-url="{{ other.url }}"
+           hx-get="/runs/{{ name }}/file?url={{ other.url | urlencode }}"
+           hx-target="#preview" hx-swap="innerHTML">{{ other.name }}</a>
         <button type="button" class="copy"
                 hx-get="/runs/{{ name }}/diff?a={{ entry.url | urlencode }}&amp;b={{ other.url | urlencode }}"
                 hx-target="#preview" hx-swap="innerHTML">compare</button>

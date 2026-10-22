@@ -85,7 +85,7 @@ def test_a_missing_file_is_not_an_error_but_an_empty_table(tmp_path: Path):
     assert table.lookup("203.0.113.24") is None
 
 
-# -- what a run does with the table ----------------------------------------
+# What a run does with the table
 
 
 def test_indicators_are_placed_in_their_networks(tmp_path: Path):
@@ -308,7 +308,7 @@ def test_a_target_written_as_a_name_stays_unresolved(tmp_path: Path):
     assert result.target_asn is None
 
 
-# -- a run keeps the answers it was given ----------------------------------
+# A run keeps the answers it was given
 
 #: The same range, announced by someone else in a later table.
 MOVED = ["203.0.113.0\t203.0.113.255\t65001\tUS\tLATER-OWNER"]

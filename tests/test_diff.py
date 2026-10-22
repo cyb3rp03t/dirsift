@@ -86,7 +86,7 @@ def baseline() -> list[Entry]:
     ]
 
 
-# -- nothing changed ---------------------------------------------------------
+# Nothing changed
 
 
 def test_two_identical_runs_report_nothing():
@@ -104,7 +104,7 @@ def test_two_identical_runs_make_a_one_sentence_report():
     assert body[0].startswith("Nothing changed")
 
 
-# -- files -------------------------------------------------------------------
+# Files
 
 
 def test_an_added_a_removed_and_a_changed_file():
@@ -141,7 +141,7 @@ def test_a_kind_change_is_caught():
     assert (kind.path, kind.old_kind, kind.new_kind) == ("invoice.pdf", "document", "pe")
 
 
-# -- families ----------------------------------------------------------------
+# Families
 
 
 def test_a_family_that_gains_a_build_and_loses_one():
@@ -160,7 +160,7 @@ def test_a_family_that_appears_and_one_that_vanishes():
     assert statuses == {"a{n}.exe": "vanished", "b{n}.dll": "appeared"}
 
 
-# -- coverage ----------------------------------------------------------------
+# Coverage
 
 
 def test_a_file_in_a_folder_the_newer_run_did_not_walk_is_not_seen_not_removed():
@@ -205,7 +205,7 @@ def test_a_run_whose_root_failed_claims_no_removals():
     assert any("could not list 1 folder" in note for note in diff.notes)
 
 
-# -- indicators --------------------------------------------------------------
+# Indicators
 
 
 def test_indicators_added_and_removed_are_printed_defanged_only():
@@ -235,7 +235,7 @@ def test_an_indicator_in_a_file_the_newer_run_did_not_read_is_not_called_removed
     }
 
 
-# -- the server and the entry point --------------------------------------------
+# The server and the entry point
 
 
 def test_a_target_that_moved_network_leads_the_server_section():
@@ -267,7 +267,7 @@ def test_a_new_driver_is_reported_with_the_old_one():
     assert diff.entry_point.new_path == "run.bat"
 
 
-# -- order and roots -----------------------------------------------------------
+# Order and roots
 
 
 def test_runs_given_newest_first_are_put_back_in_order():
@@ -317,7 +317,7 @@ def test_the_comparison_survives_a_round_trip_through_json():
     assert again == diff
 
 
-# -- the command -------------------------------------------------------------
+# The command
 
 
 def save(tmp_path: Path, name: str, result: ScanResult) -> Path:

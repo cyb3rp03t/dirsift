@@ -8,6 +8,7 @@ straight into a rule instead of a token.
 
 from __future__ import annotations
 
+import functools
 import re
 from pathlib import Path
 
@@ -102,10 +103,12 @@ def test_inline_custom_properties_are_read_by_the_stylesheet() -> None:
             assert f"var({prop}" in css, f"{template.name} sets {prop}, nothing reads it"
 
 
-def test_bar_widths_go_through_a_custom_property() -> None:
+def test_the_run_page_sets_nothing_inline() -> None:
+    """The case file draws no bars: every width it needs comes from a class. The
+    one inline door left (a server computed --fill) stays open for later use."""
     html = (WEB / "templates" / "run.html").read_text(encoding="utf-8")
     props = [p for p, _ in inline_declarations(html)]
-    assert props == ["--fill", "--fill"]
+    assert set(props) <= {"--fill"}
 
 
 def test_colours_are_written_only_as_tokens() -> None:
@@ -129,14 +132,14 @@ def test_pixel_lengths_are_written_only_as_tokens() -> None:
     assert raw == [], "pixel length outside a token definition"
 
 
-# -- the visual wave gates (G1 to G6) --------------------------------------
+# The visual wave gates (G1 to G6)
 #
 # One accent: the ground is a deep blue dark, the interface stays quiet, and the
 # single cyan accent lands only on the evidence. These gates keep that language
 # from eroding the way the sprawling dark-SaaS look did: no glow or gradient, no
 # shadow except the one overlay, the accent only where it belongs, one type
-# family, and nothing fetched over the network. The accent token is still named
-# --lamp from the earlier layer; only its value changed, so these gates hold.
+# family, and nothing fetched over the network. The accent token keeps its lamp
+# name from the earlier layer; only its value changed, so these gates hold.
 
 FONTS = WEB / "static" / "fonts"
 URL_IN_VALUE = re.compile(r"""url\(\s*["']?([^"')]+)["']?\s*\)""")
@@ -146,14 +149,49 @@ FONT_FACE_URL = re.compile(
 GRADIENTS = ("linear-gradient", "radial-gradient", "conic-gradient")
 
 # G3: the only rules allowed to paint with the lamp token. A selector earns a
-# place here because the thing it styles is evidence, not chrome. If this list
-# grows, the diff says so and the reason is on the record.
+# place here because the thing it styles is evidence, not chrome. A selector
+# matches whole: ".driver" allows ".driver.is-lead" and ".driver .lead-tag",
+# never ".driver-score", which needs a line and a reason of its own. If this
+# list grows, the diff says so and the reason is on the record.
 LAMP_SELECTORS = (
-    ".button",  # the single filled primary action (Start scan)
+    ".button",  # the single filled primary action on a page (Start scan)
     ".is-selected",  # the open file row's 2px edge in the listing
     "pre.source",  # an indicator mark in the contents, and its line number
-    ".driver",  # the likely-driver score and the listing driver badge
+    ".driver",  # the lead driver card, its lead tag, and the driver dot on a row
+    ".driver-score",  # the likely-driver score on a driver card
+    ".driver-badge",  # the driver score badge on a listing row
+    ".driver-node",  # a likely driver's node in the drivers figure
+    # In the case file layout the accent also marks the
+    # one choice a control holds right now, because that choice decides which
+    # evidence is on screen. Nothing decorative is added.
+    ".spy",  # navigation: the section being read
+    ".facet",  # the one indicator kind the timeline is showing
+    ".pick",  # the files picked for a YARA rule
+    ".prod",  # the detection format whose preview is open
+    ".tl",  # the timeline dot on an indicator worth reading first
+    # The mark: the sift band through the D is the one accent the logo carries,
+    # the same cut on every page, so it is identity, not decoration.
+    ".brand-mark",  # the sift band in the logo at the top left
 )
+LAMP_TOKEN = "var(--lamp"
+
+
+def _allowed(prelude: str) -> bool:
+    """True when the prelude names an allowed selector whole, not as a prefix."""
+    return any(
+        re.search(re.escape(sel) + r"(?![\w-])", prelude) for sel in LAMP_SELECTORS
+    )
+
+
+def lamp_offenders(css: str) -> list[str]:
+    """Every declaration that reads a lamp token outside the allowed selectors."""
+    offenders = []
+    for prelude, prop, value in css_declarations(css):
+        if prop.startswith("--"):
+            continue  # the token layer defines the lamp; it does not apply it
+        if LAMP_TOKEN in value and not _allowed(prelude):
+            offenders.append(f"{prelude} {{ {prop}: {value} }}")
+    return offenders
 
 
 def _css() -> str:
@@ -195,15 +233,44 @@ def test_g2_box_shadow_is_only_focus_or_the_one_overlay() -> None:
 
 def test_g3_the_lamp_burns_only_on_the_evidence() -> None:
     """Every rule that reads a lamp token sits on an allowed selector."""
-    offenders = []
-    for prelude, prop, value in css_declarations(_css()):
-        if prop.startswith("--"):
-            continue  # the token layer defines the lamp; it does not apply it
-        if "var(--lamp" not in value:
-            continue
-        if not any(sel in prelude for sel in LAMP_SELECTORS):
-            offenders.append(f"{prelude} {{ {prop}: {value} }}")
+    offenders = lamp_offenders(_css())
     assert offenders == [], f"the lamp burns off the evidence: {offenders}"
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        ".title { color: var(--lamp) }",
+        ".button-row { border-color: var(--lamp) }",
+        ".driver-tag { background: var(--lamp-wash) }",
+        ".sec-n { color: var(--lamp) }",
+        ".spyglass a { color: var(--lamp) }",
+    ],
+)
+def test_g3_rejects_a_selector_that_only_shares_a_prefix(rule: str) -> None:
+    """The gate itself: a near name of an allowed selector does not get through."""
+    assert lamp_offenders(rule) != []
+
+
+def test_g3_lets_an_allowed_selector_through_with_its_modifiers() -> None:
+    css = (
+        ".driver.is-lead { border-color: var(--lamp) }\n"
+        '.facet[aria-pressed="true"] { color: var(--lamp) }'
+    )
+    assert lamp_offenders(css) == []
+
+
+def test_g3_the_include_pills_stay_neutral() -> None:
+    """Every include pill on the Detections form starts checked, so the lamp on a
+    checked pill would burn a whole row at once. Only the one active timeline
+    facet carries it."""
+    burning = [
+        prelude
+        for prelude, prop, value in css_declarations(_css())
+        if LAMP_TOKEN in value and not prop.startswith("--") and "input:checked" in prelude
+        and ".facet" in prelude
+    ]
+    assert burning == [], burning
 
 
 def test_g4_space_grotesk_is_gone_and_every_face_file_exists() -> None:
@@ -243,10 +310,9 @@ def test_g5_nothing_is_loaded_over_the_network() -> None:
         assert not url_http.search(text), f"{template.name} has a remote url()"
 
 
-@pytest.mark.slow
-def test_g6_the_wheel_ships_the_fonts() -> None:
-    """Build the wheel and prove the vendored faces and their licences travel
-    with it, so an offline install still draws in the right type."""
+@functools.lru_cache(maxsize=1)
+def _wheel_names() -> tuple[str, ...]:
+    """Build the wheel once for every gate that reads what it ships."""
     import subprocess
     import tempfile
     import zipfile
@@ -267,7 +333,14 @@ def test_g6_the_wheel_ships_the_fonts() -> None:
             pytest.skip(f"wheel build failed offline: {built.stderr.strip()[-200:]}")
         wheels = list(Path(out).glob("*.whl"))
         assert wheels, "no wheel produced"
-        names = zipfile.ZipFile(wheels[0]).namelist()
+        return tuple(zipfile.ZipFile(wheels[0]).namelist())
+
+
+@pytest.mark.slow
+def test_g6_the_wheel_ships_the_fonts() -> None:
+    """Build the wheel and prove the vendored faces and their licences travel
+    with it, so an offline install still draws in the right type."""
+    names = _wheel_names()
     shipped = {n for n in names if "/web/static/fonts/" in n}
     woff2 = {n.rsplit("/", 1)[1] for n in shipped if n.endswith(".woff2")}
     licences = {n.rsplit("/", 1)[1] for n in shipped if n.endswith(".txt")}
@@ -278,6 +351,62 @@ def test_g6_the_wheel_ships_the_fonts() -> None:
     assert "IBM-PLEX-SANS-OFL.txt" in licences, licences
     assert "JETBRAINS-MONO-OFL.txt" in licences, licences
     assert not any("space-grotesk" in n.lower() for n in shipped), shipped
+
+
+@pytest.mark.slow
+def test_g7_the_wheel_ships_the_favicon() -> None:
+    """The tab icon travels with the package, so an offline install has it."""
+    static = {n.rsplit("/", 1)[1] for n in _wheel_names() if "/web/static/" in n}
+    assert "favicon.svg" in static, static
+    assert "favicon-32.png" in static, static
+
+
+# The mark. The favicon is the one file that holds its own colours: a browser
+# draws it outside the page, where no token reaches, so it carries the ink and
+# lamp values for a light and a dark tab bar and switches on the scheme. The
+# README lockups are the same case (GitHub shows them as images). Everything
+# the console draws with the mark takes its colour from the tokens.
+
+FAVICON = WEB / "static" / "favicon.svg"
+DOCS = Path(__file__).resolve().parents[1] / "docs"
+LOCKUPS = (DOCS / "dirsift-lockup-dark.svg", DOCS / "dirsift-lockup-light.svg")
+MARK_COLOURS = {"#070b12", "#0a7aab", "#e9eefa", "#56c7f2"}
+
+
+def test_the_favicon_holds_only_the_marks_own_colours() -> None:
+    svg = FAVICON.read_text(encoding="utf-8")
+    colours = {c.lower() for c in re.findall(r"#[0-9a-fA-F]{6}\b", svg)}
+    assert colours and colours <= MARK_COLOURS, colours
+    assert "prefers-color-scheme: dark" in svg
+    assert 'viewBox="0 0 16 16"' in svg
+
+
+def test_the_readme_lockups_are_outlines_only() -> None:
+    """GitHub loads no web font for an image, so the wordmark is drawn, not typed."""
+    for lockup in LOCKUPS:
+        svg = lockup.read_text(encoding="utf-8")
+        assert "<text" not in svg and "font-family" not in svg, lockup.name
+        colours = {c.lower() for c in re.findall(r"#[0-9a-fA-F]{6}\b", svg)}
+        assert colours <= MARK_COLOURS, (lockup.name, colours)
+
+
+def test_the_readme_opens_on_the_lockup_for_both_themes() -> None:
+    readme = (DOCS.parent / "README.md").read_text(encoding="utf-8")
+    head = readme.split("[![CI]", 1)[0]
+    assert "<picture>" in head
+    assert 'media="(prefers-color-scheme: dark)" srcset="docs/dirsift-lockup-dark.svg"' in head
+    assert 'src="docs/dirsift-lockup-light.svg"' in head
+    assert 'alt="DirSift"' in head
+
+
+def test_the_brand_mark_takes_its_colour_from_tokens() -> None:
+    fills = [
+        (prelude, value)
+        for prelude, prop, value in css_declarations(_css())
+        if ".brand-mark" in prelude and prop == "fill"
+    ]
+    assert fills, "the mark has no fill rules"
+    assert all(value.startswith("var(--") for _, value in fills), fills
 
 
 def test_the_focus_ring_shows_outside_its_gap() -> None:

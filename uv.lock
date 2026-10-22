@@ -278,6 +278,7 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pyyaml" },
     { name = "ruff" },
     { name = "stix2" },
     { name = "stix2-validator" },
@@ -301,6 +302,7 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=9.1,<10" },
     { name = "pytest-asyncio", specifier = ">=1.4,<2" },
+    { name = "pyyaml", specifier = ">=6.0,<7" },
     { name = "ruff", specifier = ">=0.16,<0.17" },
     { name = "stix2", specifier = ">=3.0,<4" },
     { name = "stix2-validator", specifier = ">=3.2,<3.3" },

@@ -16,7 +16,7 @@ from datetime import datetime
 
 from .classify import INTERESTING_NAMES, mismatch
 from .diagnose import explain
-from .extract import defang
+from .extract import SecretMask, defang
 from .glue import GlueCandidate
 from .models import Entry, Kind, ScanResult
 
@@ -105,7 +105,7 @@ def render_markdown(
     lines: list[str] = []
     add = lines.append
 
-    # -- header ------------------------------------------------------------
+    # Header
     add(f"# Open directory triage: {defang(root)}")
     add("")
     add(f"- **Scanned**: {_fmt_time(result.started_at)} to {_fmt_time(result.finished_at)}")
@@ -128,7 +128,7 @@ def render_markdown(
     )
     add("")
 
-    # -- inventory ---------------------------------------------------------
+    # Inventory
     add("## Inventory")
     add("")
     by_kind = result.by_kind()
@@ -147,7 +147,7 @@ def render_markdown(
                 f"{human_size(total) if total else '-'} | {sample} |")
         add("")
 
-    # -- clusters ----------------------------------------------------------
+    # Clusters
     if result.clusters:
         add("## Version families")
         add("")
@@ -164,7 +164,7 @@ def render_markdown(
                 f"{len(cluster.members)} | {members} |")
         add("")
 
-    # -- entry points ------------------------------------------------------
+    # Entry points
     add("## Entry point candidates")
     add("")
     ranked = [c for c in candidates if c.score > 0]
@@ -188,7 +188,7 @@ def render_markdown(
                 add(f"- execution tells: {', '.join(f'`{t}`' for t in candidate.tells[:10])}")
             add("")
 
-    # -- notable -----------------------------------------------------------
+    # Notable
     notable = _notable(result)
     if notable:
         add("## Worth a second look")
@@ -197,7 +197,7 @@ def render_markdown(
             add(f"- `{name}`: {note}")
         add("")
 
-    # -- hashes ------------------------------------------------------------
+    # Hashes
     hashed = [entry for entry in result.files if entry.sha256]
     if hashed:
         add("## Hashes")
@@ -211,7 +211,7 @@ def render_markdown(
             add(f"| `{_rel(entry, root)}` | `{entry.sha256}` | `{entry.md5 or '-'}` |")
         add("")
 
-    # -- indicators --------------------------------------------------------
+    # Indicators
     add("## Indicators")
     add("")
     if not result.iocs:
@@ -228,6 +228,7 @@ def render_markdown(
             add(f"Networks read from `{result.asn_source}`{stamp}, on this machine. "
                 "ASN ownership changes, so an answer older than the address is a guess.")
             add("")
+        mask = SecretMask(result.iocs)
         grouped: dict[str, list] = {}
         for ioc in result.iocs:
             grouped.setdefault(ioc.ioc_type, []).append(ioc)
@@ -238,13 +239,13 @@ def render_markdown(
             for ioc in items[:80]:
                 label = f"  [{ioc.label}]" if ioc.label else ""
                 network = network_note(ioc.asn, ioc.as_name, ioc.country)
-                add(f"{ioc.defanged}{label}{f'  {network}' if network else ''}")
+                add(f"{mask.indicator(ioc)}{label}{f'  {network}' if network else ''}")
             if len(items) > 80:
                 add(f"... +{len(items) - 80} more")
             add("```")
             add("")
 
-    # -- full listing ------------------------------------------------------
+    # Full listing
     add("## Full listing")
     add("")
     add("| Path | Type | Size | Modified | Family |")
@@ -262,7 +263,7 @@ def render_markdown(
         add(f"| _+{len(result.entries) - max_rows} more rows_ | | | | |")
     add("")
 
-    # -- errors ------------------------------------------------------------
+    # Errors
     if result.errors:
         add("## Notes and errors")
         add("")
@@ -274,7 +275,7 @@ def render_markdown(
                 add(f"  _{meaning}_")
         add("")
 
-    # -- writeup scaffold --------------------------------------------------
+    # Writeup scaffold
     if scaffold:
         add("---")
         add("")

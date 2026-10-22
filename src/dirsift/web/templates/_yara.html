@@ -1,9 +1,8 @@
 <div class="preview">
   <div class="preview-head">
-    <p class="quiet">Rule</p>
-    <h2 class="preview-name" tabindex="-1">
+    <h4 class="preview-name out-fn">
       {% if picked %}{{ picked | length }} file{{ "" if picked | length == 1 else "s" }} selected{% else %}Nothing selected{% endif %}
-    </h2>
+    </h4>
     {% if picked %}
     <ul class="chips">
       {% for entry in picked %}<li class="chip">{{ entry.name }}</li>{% endfor %}
@@ -17,7 +16,7 @@
          stroke-width="2" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path>
     </svg>
-    <p>Pick at least one file in the listing, then build the rule again.</p>
+    <p>Pick at least one file above and the rule is written here.</p>
   </div>
   {% else %}
   <div class="button-row">

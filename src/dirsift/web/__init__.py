@@ -18,23 +18,30 @@ import json
 import re
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 from fastapi import FastAPI, Form, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
+from .. import detections
 from ..analyze import analyze
 from ..asn import default_table
 from ..classify import mismatch
 from ..diagnose import explain
 from ..enrich import MissingKey, api_key_from_env, lookup_hash
-from ..extract import defang
+from ..extract import SecretMask, defang
 from ..fetcher import PrivateTargetError, ScopeError
 from ..models import Entry, Ioc, ScanResult
 from ..report import human_size, render_markdown
@@ -109,6 +116,13 @@ DIGEST_IN_FORM = Form(default="")
 #: Selected files arrive as a repeated field, from the form and from the link.
 PICKED_IN_FORM = Form(default=[])
 PICKED_IN_QUERY = Query(default=[])
+
+#: Repeated query fields for the detection routes.
+TYPES_IN_QUERY = Query(default=[])
+
+#: What a live download carries besides the file: never cached, never sniffed
+#: into something a browser would render.
+LIVE_HEADERS = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 
 #: Bytes per row in the hex view.
 HEX_COLUMNS = 16
@@ -224,7 +238,13 @@ def _preview(
         "name": name,
         "entry": entry,
         "mismatch": mismatch(entry),
-        "iocs": [ioc for ioc in result.iocs if ioc.found_in(entry.url)],
+        # The list names a secret instead of quoting it; the contents tab is the
+        # file itself, raw on purpose.
+        "iocs": [
+            ioc.model_copy(update={"defanged": _mask(result).indicator(ioc)})
+            for ioc in result.iocs
+            if ioc.found_in(entry.url)
+        ],
         "referenced_by": [
             other
             for other in result.files
@@ -243,6 +263,39 @@ def _preview(
     }
 
 
+#: The live values and the secret mask of the run drawn last, so a page with a
+#: hundred context lines walks the run's indicators once and not a hundred times.
+_shown_cache: tuple[object, list[str], SecretMask] = (None, [], SecretMask([]))
+
+
+def _shown_for(result: ScanResult) -> tuple[list[str], SecretMask]:
+    global _shown_cache
+    cached, values, mask = _shown_cache
+    if cached is not result:
+        values, mask = detections.live_values(result), SecretMask(result.iocs)
+        _shown_cache = (result, values, mask)
+    return values, mask
+
+
+def _mask(result: ScanResult) -> SecretMask:
+    return _shown_for(result)[1]
+
+
+def defang_shown(text: str | None, result: ScanResult) -> str:
+    """A line from the target's own files, made safe to show on the run page.
+
+    Context lines were defanged with the rules of the day the run was saved,
+    so an older run can carry a live address in one. This defangs at display
+    time with every live value the run holds plus the prose pass, so old and
+    new runs read the same. A secret is named by its kind, length and digest,
+    never quoted. The saved run is not changed.
+    """
+    if not text:
+        return ""
+    values, mask = _shown_for(result)
+    return detections.defang_with(mask.text(text), values)
+
+
 def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     runs_dir = Path(runs_dir)
     runs_dir.mkdir(parents=True, exist_ok=True)
@@ -253,6 +306,7 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     templates.env.filters["human_size"] = human_size
     templates.env.filters["defang"] = defang
     templates.env.filters["explain"] = explain
+    templates.env.filters["defang_shown"] = defang_shown
     jobs = JobStore()
 
     # The address table is half a million ranges and takes a few seconds to
@@ -261,7 +315,7 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     # machine without the table gets an empty one back immediately.
     threading.Thread(target=default_table, daemon=True, name="asn-warm").start()
 
-    # -- helpers -----------------------------------------------------------
+    # Helpers
 
     def list_runs() -> list[dict[str, object]]:
         out = []
@@ -331,7 +385,7 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             job.state = "failed"
             job.error = _failure_message(exc)
 
-    # -- routes ------------------------------------------------------------
+    # Routes
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
@@ -521,6 +575,280 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             headers={"Content-Disposition": 'attachment; filename="' + name + '.yar"'},
         )
 
+    # Detections
+    #
+    # Every route here reads the saved run and writes nothing. The preview is
+    # defanged; only download and the zip carry live values, and both are sent
+    # as attachments so a browser saves them instead of showing them.
+
+    def detection_options(
+        result: ScanResult,
+        tlp: str | None,
+        types: list[str],
+        source: str | None,
+        exclude_private: bool,
+        exclude_protocol: bool,
+        profile: str | None,
+        pick: list[str],
+    ) -> detections.Options:
+        """The export options from the query. Raises BadOption or LookupError."""
+        source = source or None
+        if source is not None and not any(entry.url == source for entry in result.files):
+            raise LookupError(source)
+        wanted = set(pick)
+        return detections.Options(
+            tlp=detections.parse_tlp(tlp),
+            types=detections.parse_types(types, detections.SHAREABLE),
+            source=source,
+            exclude_private=exclude_private,
+            exclude_protocol=exclude_protocol,
+            profile=detections.parse_profile(profile),
+            pick=tuple(entry.url for entry in result.files if entry.url in wanted),
+        )
+
+    def options_query(options: detections.Options) -> str:
+        pairs: list[tuple[str, str]] = [("tlp", options.tlp)]
+        for kind in sorted(options.types or ()):
+            pairs.append(("types", kind))
+        if options.source:
+            pairs.append(("source", options.source))
+        pairs.append(("exclude_private", "true" if options.exclude_private else "false"))
+        pairs.append(("exclude_protocol", "true" if options.exclude_protocol else "false"))
+        pairs.append(("profile", options.profile))
+        for url in options.pick:
+            pairs.append(("pick", url))
+        return urlencode(pairs)
+
+    def detection_context(
+        name: str, result: ScanResult, candidates, options: detections.Options
+    ) -> dict:
+        run = detections.Run(result=result, name=name, candidates=tuple(candidates))
+        info = detections.summary(run, options)
+        query = options_query(options)
+        for target in info["targets"]:
+            base = f"/runs/{name}/detections/{target['id']}"
+            target["preview_url"] = f"{base}?{query}"
+            target["download_url"] = f"{base}/download?{query}"
+        # The type and file filters count over the whole run, so narrowing to
+        # one type or one file never hides the others from the controls.
+        everything = detections.collect(result, replace(options, source=None, types=None))
+        per_path: dict[str, int] = {}
+        for item in everything.indicators:
+            for path in item.sources:
+                per_path[path] = per_path.get(path, 0) + 1
+        sources = []
+        for entry in sorted(result.files, key=lambda e: e.url):
+            path = unquote(entry.url.removeprefix(result.root_url)) or entry.name
+            if per_path.get(path):
+                sources.append({"url": entry.url, "path": path, "count": per_path[path]})
+        return {
+            "name": name,
+            "run": run,
+            "options": {
+                "tlp": options.tlp,
+                "types": sorted(options.types) if options.types is not None else None,
+                "source": options.source,
+                "exclude_private": options.exclude_private,
+                "exclude_protocol": options.exclude_protocol,
+                "profile": options.profile,
+            },
+            "tlp_levels": list(detections.TLP_LEVELS),
+            "types": everything.counts(),
+            "left_out": info["left_out"],
+            "sources": sources,
+            "targets": info["targets"],
+            "zip_url": f"/runs/{name}/detections.zip?{query}",
+        }
+
+    def bad_option(exc: Exception):
+        return PlainTextResponse(str(exc) + ".", status_code=400)
+
+    def no_target():
+        return PlainTextResponse("No such detection target.", status_code=404)
+
+    def asked(request: Request, name: str, result: ScanResult, query: dict):
+        """Options from the query, or the response that refuses them."""
+        try:
+            return detection_options(result, **query), None
+        except detections.BadOption as exc:
+            return None, bad_option(exc)
+        except LookupError:
+            return None, not_in_run(request, name, query.get("source") or "")
+
+    @app.get("/runs/{name}/detections.json")
+    def detections_list(
+        request: Request,
+        name: str,
+        tlp: str | None = None,
+        types: list[str] = TYPES_IN_QUERY,
+        source: str | None = None,
+        exclude_private: bool = True,
+        exclude_protocol: bool = True,
+        profile: str | None = None,
+        pick: list[str] = PICKED_IN_QUERY,
+    ):
+        """The targets and their counts, for scripts and for the panel's own tests."""
+        result, candidates = load_run(name)
+        options, refusal = asked(request, name, result, {
+            "tlp": tlp, "types": types, "source": source, "exclude_private": exclude_private,
+            "exclude_protocol": exclude_protocol, "profile": profile, "pick": pick,
+        })
+        if refusal is not None:
+            return refusal
+        context = detection_context(name, result, candidates, options)
+        context.pop("run")
+        return JSONResponse({"run": context.pop("name"), **context})
+
+    @app.get("/runs/{name}/detections", response_class=HTMLResponse)
+    def detections_panel(
+        request: Request,
+        name: str,
+        tlp: str | None = None,
+        types: list[str] = TYPES_IN_QUERY,
+        source: str | None = None,
+        exclude_private: bool = True,
+        exclude_protocol: bool = True,
+        profile: str | None = None,
+        pick: list[str] = PICKED_IN_QUERY,
+    ):
+        """The rule pack panel: targets, counts, filters, and what was left out."""
+        result, candidates = load_run(name)
+        options, refusal = asked(request, name, result, {
+            "tlp": tlp, "types": types, "source": source, "exclude_private": exclude_private,
+            "exclude_protocol": exclude_protocol, "profile": profile, "pick": pick,
+        })
+        if refusal is not None:
+            return refusal
+        context = detection_context(name, result, candidates, options)
+        context.pop("run")
+        if is_htmx(request):
+            return templates.TemplateResponse(request, "_detections.html", context)
+        # Without the script the run page links here and the filter form
+        # submits here, so a plain request gets a whole page around the panel.
+        context["root"] = defang(result.root_url)
+        return templates.TemplateResponse(request, "detections_page.html", context)
+
+    @app.get("/runs/{name}/detections.zip")
+    def detections_zip(
+        request: Request,
+        name: str,
+        tlp: str | None = None,
+        types: list[str] = TYPES_IN_QUERY,
+        source: str | None = None,
+        exclude_private: bool = True,
+        exclude_protocol: bool = True,
+        profile: str | None = None,
+        pick: list[str] = PICKED_IN_QUERY,
+        targets: str | None = None,
+    ):
+        """Every target in one archive, live, with a manifest."""
+        result, candidates = load_run(name)
+        options, refusal = asked(request, name, result, {
+            "tlp": tlp, "types": types, "source": source, "exclude_private": exclude_private,
+            "exclude_protocol": exclude_protocol, "profile": profile, "pick": pick,
+        })
+        if refusal is not None:
+            return refusal
+        if targets:
+            wanted = [part.strip() for part in targets.split(",") if part.strip()]
+            if any(part not in detections.TARGETS for part in wanted):
+                return no_target()
+            chosen = [detections.TARGETS[part] for part in wanted]
+        else:
+            chosen = list(detections.TARGETS.values())
+        run = detections.Run(result=result, name=name, candidates=tuple(candidates))
+        return Response(
+            detections.zip_bytes(run, options, chosen),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{detections.zip_name(run)}"',
+                **LIVE_HEADERS,
+            },
+        )
+
+    @app.get("/runs/{name}/detections/{target}", response_class=HTMLResponse)
+    def detection_preview(
+        request: Request,
+        name: str,
+        target: str,
+        tlp: str | None = None,
+        types: list[str] = TYPES_IN_QUERY,
+        source: str | None = None,
+        exclude_private: bool = True,
+        exclude_protocol: bool = True,
+        profile: str | None = None,
+        pick: list[str] = PICKED_IN_QUERY,
+        format: str | None = None,  # noqa: A002 - the public name of the query field
+    ):
+        """One target, defanged. HTML for the panel, or text with format=text."""
+        result, candidates = load_run(name)
+        chosen = detections.TARGETS.get(target)
+        if chosen is None:
+            return no_target()
+        options, refusal = asked(request, name, result, {
+            "tlp": tlp, "types": types, "source": source, "exclude_private": exclude_private,
+            "exclude_protocol": exclude_protocol, "profile": profile, "pick": pick,
+        })
+        if refusal is not None:
+            return refusal
+        context = detection_context(name, result, candidates, options)
+        run = context.pop("run")
+        text = detections.preview(chosen, run, options)
+        if format == "text":
+            return PlainTextResponse(text, headers={"Cache-Control": "no-store"})
+        record = next(item for item in context["targets"] if item["id"] == target)
+        note = None
+        if chosen.needs_pick and not options.pick:
+            note = "Pick files in the listing to build rules from."
+        return templates.TemplateResponse(
+            request,
+            "_detection.html",
+            {
+                "name": name,
+                "target": record,
+                "preview": text,
+                "options": context["options"],
+                "left_out": record["left_out"],
+                "assumes": record["assumes"],
+                "empty": record["count"] == 0 and not chosen.needs_pick,
+                "note": note,
+            },
+        )
+
+    @app.get("/runs/{name}/detections/{target}/download")
+    def detection_download(
+        request: Request,
+        name: str,
+        target: str,
+        tlp: str | None = None,
+        types: list[str] = TYPES_IN_QUERY,
+        source: str | None = None,
+        exclude_private: bool = True,
+        exclude_protocol: bool = True,
+        profile: str | None = None,
+        pick: list[str] = PICKED_IN_QUERY,
+    ):
+        """One target as the file itself: live values, saved rather than shown."""
+        result, candidates = load_run(name)
+        chosen = detections.TARGETS.get(target)
+        if chosen is None:
+            return no_target()
+        options, refusal = asked(request, name, result, {
+            "tlp": tlp, "types": types, "source": source, "exclude_private": exclude_private,
+            "exclude_protocol": exclude_protocol, "profile": profile, "pick": pick,
+        })
+        if refusal is not None:
+            return refusal
+        run = detections.Run(result=result, name=name, candidates=tuple(candidates))
+        return Response(
+            detections.render(chosen, run, options),
+            media_type=chosen.media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{detections.filename(run, chosen)}"',
+                **LIVE_HEADERS,
+            },
+        )
+
     @app.get("/runs/{name}/diff", response_class=HTMLResponse)
     def file_diff(request: Request, name: str, a: str, b: str):
         """Two versions of the same artefact, side by side in one panel."""
@@ -543,7 +871,8 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     @app.get("/runs/{name}/iocs.txt", response_class=PlainTextResponse)
     def run_iocs(name: str):
         result, _ = load_run(name)
-        return "\n".join(ioc.defanged for ioc in result.iocs)
+        mask = SecretMask(result.iocs)
+        return "\n".join(mask.indicator(ioc) for ioc in result.iocs)
 
     @app.get("/runs/{name}/hashes.txt", response_class=PlainTextResponse)
     def run_hashes(name: str):

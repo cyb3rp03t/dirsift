@@ -1,47 +1,106 @@
 {% extends "base.html" %}
 {% block title %}{{ result.root_url | defang }}{% endblock %}
-{% block hints %}
-<span class="hints"><span class="kbd">j</span><span class="kbd">k</span> move the files</span>
+{% block nav_extra %}<a href="#identity" aria-current="page">this run</a>{% endblock %}
+{% block backlink %}{% endblock %}
+
+{% block subnav %}
+{#- The six parts of the case file, in reading order. The old tab keys (files,
+    indicators, families, notes, settings) are ids inside these parts, so a link
+    made before the case file still has somewhere to land. -#}
+{% set sections = [
+     ("identity", "01", "Identity"),
+     ("drivers", "02", "Drivers"),
+     ("files", "03", "Inventory"),
+     ("indicators", "04", "Indicators"),
+     ("detections", "05", "Detections"),
+     ("settings", "06", "Run settings"),
+   ] %}
+
+<nav class="spy-band" data-run-sections aria-label="Sections of this run">
+  <ol class="spy" data-spy>
+    {% for key, number, label in sections %}
+    <li><a href="#{{ key }}" data-spy-link{% if loop.first %} aria-current="location"{% endif %}><span class="spy-n">{{ number }}</span> {{ label }}</a></li>
+    {% endfor %}
+  </ol>
+</nav>
 {% endblock %}
+
 {% block body %}
 
-{% set kind_max = (by_kind[0][1] | length) if by_kind else 1 %}
-{% set ioc_max = ioc_types[0][1] if ioc_types else 1 %}
 {% set hashed = result.files | selectattr("sha256") | list %}
+{% set asked_tab = request.query_params.get("tab") %}
+{% set asked_file = request.query_params.get("file") %}
+{% set land = tab if (asked_tab and asked_tab == tab and not asked_file) else none %}
+
+{#- Kinds in the order a reader wants them: what runs first, then what it reads. -#}
+{% set kind_order = ["elf", "pe", "macho", "script", "web", "config", "data", "archive", "document", "image", "cert", "unknown"] %}
+{% set kind_label = {
+     "elf": "Executables", "pe": "Windows executables", "macho": "Mach-O executables",
+     "script": "Scripts", "web": "Web pages", "config": "Config", "data": "Logs and data",
+     "archive": "Archives", "document": "Documents", "image": "Images",
+     "cert": "Certificates", "unknown": "Not identified",
+   } %}
+{% set kind_tag = {"elf": "ELF", "pe": "PE", "macho": "Mach-O", "unknown": "unread"} %}
+{% set groups = [] %}
+{% for kind in kind_order %}
+  {% for found, items in by_kind if found == kind %}{% set _ = groups.append((kind, items | sort(attribute="name"))) %}{% endfor %}
+{% endfor %}
+{% for found, items in by_kind if found not in kind_order %}{% set _ = groups.append((found, items | sort(attribute="name"))) %}{% endfor %}
 
 {#- A value the run does not have reads "none", never a lone dash. -#}
 {% macro value(text) -%}
   {%- if text is none or text == "" -%}<span class="none">none</span>{%- else -%}{{ text }}{%- endif -%}
 {%- endmacro %}
 
-<section class="run-summary" aria-labelledby="run-title">
-  <div class="run-summary-head">
+{#- A file name that opens the preview. It is a real link to ?file=, so without
+    the script the server renders the page with the preview in it. -#}
+{% macro opener(entry, label=none, extra="") -%}
+<a class="link-button{{ extra }}{% if preview and preview.entry.url == entry.url %} is-selected{% endif %}"
+   href="/runs/{{ name }}?file={{ entry.url | urlencode }}#preview-sheet"
+   data-file-url="{{ entry.url }}"
+   hx-get="/runs/{{ name }}/file?url={{ entry.url | urlencode }}"
+   hx-target="#preview" hx-swap="innerHTML">{{ label or entry.name }}</a>
+{%- endmacro %}
+
+<div class="case-file" data-case{% if land %} data-land="{{ land }}"{% endif %}>
+
+<section class="run-summary case-sec" id="identity" aria-labelledby="run-title">
+  <header class="case-h">
+    <a class="backlink" href="/">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path>
+      </svg>
+      Back to Dashboard
+    </a>
     <h1 class="run-title data" id="run-title">{{ result.root_url | defang }}</h1>
-    <p class="run-exports">
-      <a href="/runs/{{ name }}/report.md">markdown report</a>
-      <a href="/runs/{{ name }}/iocs.txt">indicators</a>
-      <a href="/runs/{{ name }}/hashes.txt">hashes</a>
+    <p class="case-sub">
+      <span class="state-done">done</span>
+      <span>{{ result.listing_flavor or "unknown" }} index</span>
+      <span>{{ result.files | length }} file{{ "" if result.files | length == 1 else "s" }},
+        {{ result.iocs | length }} indicator{{ "" if result.iocs | length == 1 else "s" }},
+        {{ result.clusters | length }} famil{{ "y" if result.clusters | length == 1 else "ies" }}</span>
+      <span>read {{ result.bytes_fetched | human_size }} in {{ result.requests_made }} request{{ "" if result.requests_made == 1 else "s" }}</span>
     </p>
-  </div>
-  <dl class="summary-strip">
-    <div><dt>address</dt><dd>{{ value(result.target_ip | defang if result.target_ip else none) }}</dd></div>
-    <div><dt>network</dt><dd>
-      {%- if result.target_asn -%}
-        AS{{ result.target_asn }}{% if result.target_as_name %} {{ result.target_as_name }}{% endif %}
-      {%- else -%}{{ value(none) }}{%- endif -%}
-    </dd></div>
-    <div><dt>country</dt><dd>{{ value(result.target_country) }}</dd></div>
-    <div><dt>index</dt><dd>{{ value(result.listing_flavor) }}</dd></div>
-    <div><dt>server</dt><dd>{{ value(result.server) }}</dd></div>
-    <div class="group-break"><dt>requests</dt><dd>{{ result.requests_made }}</dd></div>
-    <div><dt>read</dt><dd>{{ result.bytes_fetched | human_size }}</dd></div>
-    <div><dt>files</dt><dd>{{ result.files | length }}</dd></div>
-    <div><dt>directories</dt><dd>{{ result.dirs | length }}</dd></div>
-    <div><dt>indicators</dt><dd>{{ result.iocs | length }}</dd></div>
-    <div><dt>families</dt><dd>{{ result.clusters | length }}</dd></div>
-    <div><dt>hashed</dt><dd>{{ hashed | length }}</dd></div>
-    <div><dt>notes</dt><dd>{{ result.errors | length }}</dd></div>
-  </dl>
+    <p class="run-exports">
+      <a class="copy" href="/runs/{{ name }}/report.md">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 3H6v18h12V7z"></path><path d="M14 3v4h4"></path></svg>
+        Markdown report</a>
+      <a class="copy" href="/runs/{{ name }}/iocs.txt">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"></path>
+          <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"></path></svg>
+        Indicators</a>
+      <a class="copy" href="/runs/{{ name }}/hashes.txt">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" aria-hidden="true">
+          <path d="M5 9h14"></path><path d="M5 15h14"></path><path d="M10 3 8 21"></path><path d="M16 3l-2 18"></path></svg>
+        Hashes</a>
+    </p>
+  </header>
 
   {% if not result.entries %}
   <div class="notice {% if not (result.listing_flavor and result.listing_flavor != 'generic') %}is-warn{% endif %}">
@@ -55,309 +114,430 @@
       The scan worked; there is nothing here to triage.
     </p>
     {% elif result.errors %}
-    <p>Nothing was listed. The <a href="#notes" data-tab-link="notes">notes</a> say why.</p>
+    <p>Nothing was listed. The <a href="#notes">notes</a> say why.</p>
     {% else %}
     <p>Nothing was listed.</p>
     {% endif %}
   </div>
   {% endif %}
+
+  <h2 class="sec-h" id="identity-title"><span class="sec-n">01</span> Identity <span class="sec-c">who served this</span></h2>
+  <dl class="identity summary-strip">
+    <div><dt>address</dt><dd>{{ value(result.target_ip | defang if result.target_ip else none) }}</dd></div>
+    <div><dt>network</dt><dd>
+      {%- if result.target_asn -%}
+        AS{{ result.target_asn }}{% if result.target_as_name %} {{ result.target_as_name }}{% endif %}
+      {%- else -%}{{ value(none) }}{%- endif -%}
+    </dd></div>
+    <div><dt>country</dt><dd>{{ value(result.target_country) }}</dd></div>
+    <div><dt>index</dt><dd>{{ value(result.listing_flavor) }}</dd></div>
+    <div class="is-wide"><dt>server</dt><dd>{{ value(result.server) }}</dd></div>
+    <div><dt>requests</dt><dd>{{ result.requests_made }}</dd></div>
+    <div><dt>read</dt><dd>{{ result.bytes_fetched | human_size }}</dd></div>
+    <div><dt>files</dt><dd>{{ result.files | length }}</dd></div>
+    <div><dt>directories</dt><dd>{{ result.dirs | length }}</dd></div>
+    <div><dt>indicators</dt><dd>{{ result.iocs | length }}</dd></div>
+    <div><dt>families</dt><dd>{{ result.clusters | length }}</dd></div>
+    <div><dt>hashed</dt><dd>{{ hashed | length }}</dd></div>
+    <div class="is-rest"><dt>notes</dt><dd>{{ result.errors | length }}</dd></div>
+  </dl>
 </section>
 
-<nav class="run-tabs" data-run-tabs aria-label="Parts of this run">
-  <div class="run-tabs-list" data-run-tablist>
-    {% for key, label, count in [
-         ("files", "Files", result.files | length),
-         ("indicators", "Indicators", result.iocs | length),
-         ("families", "Families", result.clusters | length),
-         ("notes", "Notes", result.errors | length),
-         ("settings", "Run settings", none),
-       ] %}
-    <a class="run-tab{% if tab == key %} is-current{% endif %}" href="#{{ key }}"
-       id="run-tab-{{ key }}" data-tab="{{ key }}">
-      {{- label }}{% if count is not none %} <span class="count">{{ count }}</span>{% endif -%}
-    </a>
+<section class="case-sec" id="drivers" aria-labelledby="drivers-title">
+  <h2 class="sec-h" id="drivers-title"><span class="sec-n">02</span> Likely drivers
+    <span class="sec-c">{{ candidates[:3] | length }} of {{ result.files | length }}</span></h2>
+  <p class="sec-d">
+    The files that name the most siblings and sit at the top of the tree. These
+    are where to read first: the rest of the directory tends to hang off them.
+  </p>
+  {% if candidates %}
+  {% set leads = candidates[:3] %}
+  <div class="evidence">
+    <ol class="ev-cards" data-drivers aria-labelledby="drivers-title">
+      {% for candidate in leads %}
+      <li class="driver ev-card{% if loop.first %} is-lead{% endif %}">
+        <div class="ev-top">
+          <span class="driver-score"><span class="visually-hidden">score </span>{{ candidate.score | round(0) | int }}</span>
+          {{ opener(candidate.entry, extra=" ev-name") }}
+          {% if loop.first %}<span class="lead-tag">lead</span>{% endif %}
+        </div>
+        <p class="driver-why">{{ candidate.reasons | join("; ") }}</p>
+        {% if candidate.references %}
+        <p class="names"><span class="visually-hidden">Names: </span>
+          {%- for named in (candidate.references | unique | list)[:6] %}<span class="name-chip">{{ named }}</span>{% endfor -%}
+        </p>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+
+    {#- The names graph: each lead on the left, the files it names on the right,
+        one curve per name. Laid out here, on the server, so it is just markup. -#}
+    {% set graph = namespace(targets=[]) %}
+    {% for candidate in leads %}
+      {% for named in (candidate.references | unique | list)[:4] %}
+        {% if named not in graph.targets and graph.targets | length < 8 %}{% set graph.targets = graph.targets + [named] %}{% endif %}
+      {% endfor %}
     {% endfor %}
-  </div>
-</nav>
-
-<section class="run-panel{% if tab == 'files' %} is-current{% endif %}" id="files" aria-labelledby="files-title">
-  <h2 class="section-title run-panel-title" id="files-title">
-    Listing <span class="count">{{ entries | length }} entries</span>
-  </h2>
-  <div class="workspace">
-    <div class="workbench-main">
-      {% if result.files %}
-      <div class="drivers">
-        <h3 class="drivers-title" id="drivers-title">Likely drivers</h3>
-        {% if candidates %}
-        <ol class="drivers-list" data-drivers aria-labelledby="drivers-title">
-          {% for candidate in candidates[:3] %}
-          <li class="driver">
-            <span class="driver-score"><span class="visually-hidden">score </span>{{ candidate.score | round(0) | int }}</span>
-            <button type="button" class="link-button"
-                    data-file-url="{{ candidate.entry.url }}"
-                    hx-get="/runs/{{ name }}/file?url={{ candidate.entry.url | urlencode }}"
-                    hx-target="#preview" hx-swap="innerHTML">{{ candidate.entry.name }}</button>
-            <span class="driver-why">{{ candidate.reasons | join("; ") }}</span>
-          </li>
+    {% if graph.targets %}
+    {% set width = 340 %}
+    {% set lead_x = 112 %}
+    {% set name_x = width - 92 %}
+    {% set height = [24 + graph.targets | length * 26, 44 + leads | length * 46] | max %}
+    <figure class="graph">
+      <figcaption>Names graph</figcaption>
+      <svg viewBox="0 0 {{ width }} {{ height }}" role="img"
+           aria-label="Each likely driver joined to the files it names">
+        {% for candidate in leads %}
+          {% set ly = 40 + loop.index0 * 46 %}
+          {% for named in (candidate.references | unique | list)[:4] if named in graph.targets %}
+            {% set ty = 22 + graph.targets.index(named) * 26 %}
+            <path class="graph-edge" d="M{{ lead_x + 6 }} {{ ly }} C{{ lead_x + 70 }} {{ ly }}, {{ name_x - 70 }} {{ ty }}, {{ name_x - 6 }} {{ ty }}"></path>
           {% endfor %}
-        </ol>
-        {% else %}
-        <p class="empty">Nothing here reads like a driver for the rest.</p>
-        {% endif %}
-      </div>
-      {% endif %}
-
-      <form class="listing-form" data-listing method="post" action="/runs/{{ name }}/yara"
-            hx-post="/runs/{{ name }}/yara" hx-target="#preview" hx-swap="innerHTML">
-        <div class="scroll-region is-tall" tabindex="0" role="region" aria-label="Full directory listing">
-          <table class="listing">
-            <thead>
-              <tr>
-                <th>pick</th><th>path</th><th>type</th><th class="num">size</th>
-                <th>sha256</th><th>modified</th><th>family</th>
-              </tr>
-            </thead>
-            <tbody data-listing-rows>
-              {% for entry in entries %}
-              <tr{% if preview and preview.entry.url == entry.url %} class="is-selected"{% endif %}>
-                <td>
-                  {%- if not entry.is_dir %}
-                  <input type="checkbox" name="pick" value="{{ entry.url }}"
-                         aria-label="Pick {{ entry.name }} for a rule">
-                  {%- endif %}
-                </td>
-                <td class="data">
-                  {% if entry.is_dir %}
-                    <span class="quiet">{{ entry.name }}/</span>
-                  {% else %}
-                    <button type="button" class="link-button{% if preview and preview.entry.url == entry.url %} is-selected{% endif %}"
-                            data-file-url="{{ entry.url }}"
-                            hx-get="/runs/{{ name }}/file?url={{ entry.url | urlencode }}"
-                            hx-target="#preview" hx-swap="innerHTML">{{ entry.name }}</button>
-                    {%- if entry.url in driver_scores %}
-                    <span class="driver-badge"><span class="visually-hidden">driver score </span>{{ driver_scores[entry.url] }}</span>
-                    {%- endif %}
-                    {%- if entry.verdict and entry.verdict.found and entry.verdict.malicious %}
-                    <span class="chip is-alert">{{ entry.verdict.malicious }}/{{ entry.verdict.total }}</span>
-                    {%- elif entry.verdict and entry.verdict.found %}
-                    <span class="chip is-good">{{ entry.verdict.malicious }}/{{ entry.verdict.total }}</span>
-                    {%- endif %}
-                  {% endif %}
-                </td>
-                <td class="quiet">
-                  {{- "dir" if entry.is_dir else entry.kind }}
-                  {%- if mismatches.get(entry.url) %}
-                  <span class="chip is-warn" title="{{ mismatches[entry.url] }}">mismatch</span>
-                  {%- endif %}
-                </td>
-                <td class="num quiet">{{ (entry.size or entry.fetched_bytes) | human_size }}</td>
-                <td class="quiet mono-sm nowrap">
-                  {%- if entry.sha256 %}<span class="sha"><span class="head">{{ entry.sha256[:12] }}</span><span class="tail">{{ entry.sha256[12:] }}</span></span>
-                  {%- elif entry.truncated %}partial
-                  {%- elif not entry.is_dir %}-
-                  {%- endif %}
-                </td>
-                <td class="quiet nowrap">{{ entry.modified or "-" }}</td>
-                <td class="quiet">{{ entry.cluster or "" }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        <p class="scroll-hint">
-          The table scrolls sideways inside this box. Press j and k to walk the files
-          from the keyboard.
-        </p>
-        <div class="button-row">
-          <button class="button is-quiet" type="submit">Build a YARA rule</button>
-          <span class="quiet">
-            From the files you pick. Author cyb3rp03t, and the rule says it was built
-            from a bounded read.
-          </span>
-        </div>
-      </form>
-    </div>
-
-    <div class="preview-column" id="preview-sheet" data-sheet>
-      <div class="sheet-bar">
-        <button type="button" class="button is-quiet" data-sheet-close>Back to files</button>
-        <span class="quiet">or press Esc</span>
-      </div>
-      <div class="card" id="preview" aria-live="polite">
-        {% if preview %}
-          {% with entry = preview.entry, mismatch = preview.mismatch, iocs = preview.iocs,
-                  referenced_by = preview.referenced_by, siblings = preview.siblings,
-                  hex_rows = preview.hex_rows, source_html = preview.source_html,
-                  verdict_ready = preview.verdict_ready, note = preview.note %}
-            {% include "_file.html" %}
-          {% endwith %}
-        {% else %}
-        <h2 class="section-title flush-top">Preview</h2>
-        <p class="empty">
-          Pick a file from the listing. Contents come from the saved run, so
-          opening one here sends nothing to the target.
-        </p>
-        <p class="empty">
-          An open file shows its sha256 and md5 with a button that asks a public
-          scanner about the hash, the first bytes as hex, the indicators found in
-          it, the files that name it, and the other versions in its family.
-        </p>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <div class="inventory" aria-labelledby="inventory-title">
-    <h3 class="section-title" id="inventory-title">Inventory</h3>
-    {% if by_kind %}
-    <div class="bars">
-      {% for kind, items in by_kind %}
-      <div class="bar-row">
-        <span class="bar-label">{{ kind }}</span>
-        <span class="bar-track">
-          <span class="bar-fill" style="--fill: {{ (items | length) / kind_max * 100 }}%"></span>
-        </span>
-        <span class="bar-value">{{ items | length }}</span>
-      </div>
-      {% endfor %}
-    </div>
-    <p class="scroll-hint">
-      Type comes from the first bytes, and falls back to the extension only when
-      nothing was read.
-    </p>
-    {% else %}
-    <p class="empty">No files were listed.</p>
+        {% endfor %}
+        {% for candidate in leads %}
+          {% set ly = 40 + loop.index0 * 46 %}
+          <g class="driver-node">
+            <circle cx="{{ lead_x }}" cy="{{ ly }}" r="5"></circle>
+            <text x="{{ lead_x - 12 }}" y="{{ ly + 4 }}" text-anchor="end">{{ candidate.entry.name | truncate(16, true, "...", 0) }}</text>
+          </g>
+        {% endfor %}
+        {% for named in graph.targets %}
+          {% set ty = 22 + loop.index0 * 26 %}
+          <g class="name-node">
+            <circle cx="{{ name_x }}" cy="{{ ty }}" r="3.5"></circle>
+            <text x="{{ name_x + 9 }}" y="{{ ty + 4 }}">{{ named | truncate(14, true, "...", 0) }}</text>
+          </g>
+        {% endfor %}
+      </svg>
+    </figure>
     {% endif %}
   </div>
+  {% else %}
+  <p class="empty">Nothing here reads like a driver for the rest.</p>
+  {% endif %}
 </section>
 
-<section class="run-panel{% if tab == 'indicators' %} is-current{% endif %}" id="indicators" aria-labelledby="indicators-title">
-  <h2 class="section-title run-panel-title" id="indicators-title">
-    Indicators <span class="count">{{ result.iocs | length }}</span>
-  </h2>
-  <div class="card card-tight">
-    {% if ioc_types %}
-    <div class="bars bars-spaced">
-      {% for ioc_type, count in ioc_types %}
-      <div class="bar-row">
-        <span class="bar-label">{{ ioc_type }}</span>
-        <span class="bar-track">
-          <span class="bar-fill" style="--fill: {{ count / ioc_max * 100 }}%"></span>
-        </span>
-        <span class="bar-value">{{ count }}</span>
-      </div>
-      {% endfor %}
-    </div>
-    <div class="scroll-region is-tall" tabindex="0" role="region" aria-label="Every indicator in this run">
-      <table>
-        <tbody>
-          {% for ioc in result.iocs %}
-          <tr>
-            <td class="quiet nowrap">{{ ioc.ioc_type }}</td>
-            <td class="data">
-              {{ ioc.defanged }}
-              {% if ioc.label %}<span class="chip is-warn">{{ ioc.label }}</span>{% endif %}
-              {% if ioc.asn %}<span class="chip">AS{{ ioc.asn }}{% if ioc.as_name %} {{ ioc.as_name }}{% endif %}{% if ioc.country %} {{ ioc.country }}{% endif %}</span>{% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <p class="scroll-hint">Scrolls inside its own box. Full list in indicators.txt.</p>
-    {% else %}
-    <p class="empty">Nothing extracted. Either the readable files were empty or everything here is binary.</p>
-    {% endif %}
-    {% if result.asn_source %}
-    <p class="scroll-hint">
-      Networks read from {{ result.asn_source }}, dated {{ result.asn_stamp }}, on this
-      machine. Nobody was asked. Announcements change hands, so a table older than the
-      address is a guess.
-    </p>
+<section class="case-sec" id="files" aria-labelledby="files-title">
+  <h2 class="sec-h" id="files-title"><span class="sec-n">03</span> File inventory
+    <span class="sec-c">{{ result.files | length }} file{{ "" if result.files | length == 1 else "s" }}</span></h2>
+  <p class="sec-d">
+    Grouped by what each file is: the type comes from the first bytes, and falls
+    back to the extension only when nothing was read. Open a row for its metadata
+    and hashes, or open the preview to read the head exactly as served.
+  </p>
+  {% if result.files %}
+  <p class="keys js-only">
+    <kbd>j</kbd> and <kbd>k</kbd> for the next and previous file, <kbd>Enter</kbd> to open it.
+  </p>
+  {% endif %}
+
+  {% if groups or result.dirs %}
+  {% set row = namespace(n=0) %}
+  <div class="inventory" data-listing-rows>
+    {% for kind, items in groups %}
+    {% set holds_preview = preview and (items | selectattr("url", "equalto", preview.entry.url) | list) %}
+    <details class="grp" data-kind="{{ kind }}"{% if loop.first or holds_preview %} open{% endif %}>
+      <summary>
+        <svg class="grp-tw" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+        <span class="grp-l">{{ kind_label.get(kind, kind) }}</span>
+        <span class="kind-tag{% if kind in ('elf', 'pe', 'macho') %} is-exec{% endif %}">{{ kind_tag.get(kind, kind) }}</span>
+        <span class="grp-c">{{ items | length }}</span>
+      </summary>
+      <ul class="inv">
+        {% for entry in items %}
+        {% set row.n = row.n + 1 %}
+        {% set carried = namespace(n=0) %}
+        {% for ioc in result.iocs if ioc.found_in(entry.url) %}{% set carried.n = carried.n + 1 %}{% endfor %}
+        <li class="inv-row{% if entry.url in driver_scores %} driver{% endif %}{% if preview and preview.entry.url == entry.url %} is-selected{% endif %}" data-row>
+          <div class="rh">
+            <span class="fn">
+              {{ opener(entry) }}
+              {%- if entry.url in driver_scores %}
+              <span class="driver-badge"><span class="visually-hidden">driver score </span>{{ driver_scores[entry.url] }}</span>
+              {%- endif %}
+              {%- if entry.verdict and entry.verdict.found and entry.verdict.malicious %}
+              <span class="chip is-alert">{{ entry.verdict.malicious }}/{{ entry.verdict.total }}</span>
+              {%- elif entry.verdict and entry.verdict.found %}
+              <span class="chip is-good">{{ entry.verdict.malicious }}/{{ entry.verdict.total }}</span>
+              {%- endif %}
+              {%- if mismatches.get(entry.url) %}
+              <span class="chip is-warn" title="{{ mismatches[entry.url] }}">mismatch</span>
+              {%- endif %}
+            </span>
+            <span class="ic">{% if carried.n %}<b>{{ carried.n }}</b> ioc{% endif %}</span>
+            <span class="sz">{{ (entry.size or entry.fetched_bytes) | human_size }}{% if entry.truncated %}+{% endif %}</span>
+            <button type="button" class="row-toggle" aria-expanded="false" aria-controls="row-{{ row.n }}">
+              <span class="visually-hidden">Details for {{ entry.name }}</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+            </button>
+          </div>
+          <div class="inv-body" id="row-{{ row.n }}">
+            <dl class="kv">
+              <div><dt>type</dt><dd>{{ entry.kind }} · {{ entry.confidence }}</dd></div>
+              <div><dt>magic</dt><dd>{{ entry.magic or "none" }}</dd></div>
+              <div><dt>read</dt><dd>{{ entry.fetched_bytes | human_size }}{% if entry.truncated %} (partial){% endif %}</dd></div>
+              <div><dt>sha256</dt><dd>
+                {%- if entry.sha256 %}<span class="sha">{{ entry.sha256[:16] }}</span>
+                {%- elif entry.truncated %}partial read, no hash
+                {%- else %}none{%- endif -%}
+              </dd></div>
+              <div><dt>modified</dt><dd>{{ entry.modified or "none" }}</dd></div>
+              <div><dt>family</dt><dd>{{ entry.cluster or "none" }}</dd></div>
+            </dl>
+            <div class="acts">
+              <a class="copy is-out" href="/runs/{{ name }}?file={{ entry.url | urlencode }}#preview-sheet"
+                 data-opens="{{ entry.url }}">Open preview</a>
+              {% if entry.sha256 %}
+              <button type="button" class="copy" data-copy="{{ entry.sha256 }}">copy sha256</button>
+              <button type="button" class="copy"
+                      hx-post="/runs/{{ name }}/verdict?url={{ entry.url | urlencode }}"
+                      hx-target="#preview" hx-swap="innerHTML">check VirusTotal</button>
+              {% endif %}
+            </div>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endfor %}
+    {% if result.dirs %}
+    <details class="grp" data-kind="dir">
+      <summary>
+        <svg class="grp-tw" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+        <span class="grp-l">Directories</span>
+        <span class="kind-tag">dir</span>
+        <span class="grp-c">{{ result.dirs | length }}</span>
+      </summary>
+      <ul class="inv">
+        {% for entry in result.dirs | sort(attribute="name") %}
+        <li class="inv-row is-dir"><div class="rh"><span class="fn quiet data">{{ entry.name }}/</span><span class="sz">{{ entry.modified or "" }}</span></div></li>
+        {% endfor %}
+      </ul>
+    </details>
     {% endif %}
   </div>
-</section>
+  {% else %}
+  <p class="empty">No files were listed.</p>
+  {% endif %}
 
-<section class="run-panel{% if tab == 'families' %} is-current{% endif %}" id="families" aria-labelledby="families-title">
-  <h2 class="section-title run-panel-title" id="families-title">
-    Version families <span class="count">{{ result.clusters | length }}</span>
-  </h2>
-  <div class="card card-tight">
+  <section class="sub-sec" id="families" aria-labelledby="families-title">
+    <h3 class="sub-h" id="families-title">Version families <span class="sec-c">{{ result.clusters | length }}</span></h3>
     {% if result.clusters %}
-    <div class="scroll-region is-mid" tabindex="0" role="region" aria-label="Version families">
-      <table>
-        <thead>
-          <tr><th>family</th><th>variants</th><th class="num">files</th><th>members</th></tr>
-        </thead>
-        <tbody>
-          {% for cluster in result.clusters %}
-          <tr>
-            <td class="data">{{ cluster.label }}</td>
-            <td class="quiet">{{ cluster.variants | join(", ") }}</td>
-            <td class="num">{{ cluster.members | length }}</td>
-            <td class="quiet data">{{ cluster.members | join(", ") }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    <ul class="families">
+      {% for cluster in result.clusters %}
+      <li class="family">
+        <span class="data family-l">{{ cluster.label }}</span>
+        <span class="quiet">{{ cluster.members | length }} files{% if cluster.variants %}: {{ cluster.variants | join(", ") }}{% endif %}</span>
+        <span class="quiet data family-m">{{ cluster.members | join(", ") }}</span>
+      </li>
+      {% endfor %}
+    </ul>
     {% else %}
     <p class="empty">No two names here differ only by a version.</p>
     {% endif %}
-  </div>
+  </section>
 </section>
 
-<section class="run-panel{% if tab == 'notes' %} is-current{% endif %}" id="notes" aria-labelledby="notes-title">
-  <h2 class="section-title run-panel-title" id="notes-title">
-    Notes and errors <span class="count">{{ result.errors | length }}</span>
-  </h2>
-  <div class="card card-tight">
-    {% if result.errors %}
-    <div class="scroll-region is-tall" tabindex="0" role="region" aria-label="Scan notes and errors">
-      <table>
-        <thead><tr><th>stage</th><th>url</th><th>detail</th></tr></thead>
-        <tbody>
-          {% for error in result.errors %}
-          {% set meaning = error.detail | explain %}
-          <tr>
-            <td class="quiet">{{ error.stage }}</td>
-            <td class="data">{{ error.url | defang }}</td>
-            <td>
-              {{ error.detail }}
-              {% if meaning %}
-              <details class="why">
-                <summary>
-                  <span aria-hidden="true">i</span>
-                  <span class="why-label">what this means</span>
-                </summary>
-                <p>{{ meaning }}</p>
-              </details>
-              {% endif %}
-            </td>
-          </tr>
+<section class="case-sec" id="indicators" aria-labelledby="indicators-title">
+  <h2 class="sec-h" id="indicators-title"><span class="sec-n">04</span> Indicators
+    <span class="sec-c">{{ result.iocs | length }} extracted</span></h2>
+  <p class="sec-d">
+    Everything the walk pulled out of the file heads, defanged. Filter by kind;
+    each entry carries the file it came from.
+  </p>
+  {% if ioc_types %}
+  <div class="facets js-only" role="group" aria-label="Show one kind of indicator" data-facets>
+    <button type="button" class="facet" data-facet="" aria-pressed="true">all <b>{{ result.iocs | length }}</b></button>
+    {% for ioc_type, count in ioc_types %}
+    <button type="button" class="facet" data-facet="{{ ioc_type }}" aria-pressed="false">{{ ioc_type }} <b>{{ count }}</b></button>
+    {% endfor %}
+  </div>
+  <ol class="timeline" data-iocs>
+    {% for ioc in result.iocs %}
+    <li class="tl{% if ioc.ioc_type in ('url', 'secret', 'btc', 'eth', 'xmr') %} is-sig{% endif %}" data-ioc-type="{{ ioc.ioc_type }}">
+      <span class="tl-v data">{{ ioc.defanged | defang_shown(result) }}</span>
+      {%- if ioc.label %} <span class="chip is-warn">{{ ioc.label }}</span>{% endif %}
+      {%- if ioc.asn %} <span class="chip">AS{{ ioc.asn }}{% if ioc.as_name %} {{ ioc.as_name }}{% endif %}{% if ioc.country %} {{ ioc.country }}{% endif %}</span>{% endif %}
+      <span class="tl-m">{{ ioc.ioc_type }} · from {{ ioc.source_url.rstrip("/").rsplit("/", 1)[-1] or ioc.source_url }}{% if ioc.sources | length > 1 %} and {{ ioc.sources | length - 1 }} more{% endif %}</span>
+      {% if ioc.context %}<span class="tl-c data">{{ ioc.context | defang_shown(result) }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="more js-only" data-more-wrap>
+    <button type="button" class="copy" data-more>Show all {{ result.iocs | length }} indicators</button>
+  </p>
+  <p class="scroll-hint">The full list, defanged, is in indicators.txt.</p>
+  {% else %}
+  <p class="empty">Nothing extracted. Either the readable files were empty or everything here is binary.</p>
+  {% endif %}
+  {% if result.asn_source %}
+  <p class="scroll-hint">
+    Networks read from {{ result.asn_source }}, dated {{ result.asn_stamp }}, on this
+    machine. Nobody was asked. Announcements change hands, so a table older than the
+    address is a guess.
+  </p>
+  {% endif %}
+</section>
+
+<section class="case-sec" id="detections" aria-labelledby="detections-title">
+  <h2 class="sec-h" id="detections-title"><span class="sec-n">05</span> Detections
+    <span class="sec-c">rules and block lists from this run</span></h2>
+  <p class="sec-d">
+    Turn what the walk found into detections you run elsewhere. DirSift writes
+    files and sends nothing: preview, copy or download, then run it where you work.
+  </p>
+
+  <div class="det-block">
+    <div class="det-h"><h3 class="sub-h">YARA</h3><span class="quiet">one rule per file, keyed to the indicators it carried</span></div>
+    {% if result.files %}
+    <form class="listing-form picker" data-listing method="post" action="/runs/{{ name }}/yara"
+          hx-post="/runs/{{ name }}/yara" hx-target="#yara-out" hx-swap="innerHTML"
+          hx-trigger="change, submit" data-yara-form>
+      <fieldset>
+        <legend class="visually-hidden">Files to build the rule from</legend>
+        <div class="picker-bar">
+          <span class="pk-n" data-pick-count>Pick the files to build from</span>
+          <span class="picker-acts js-only">
+            <button type="button" class="copy" data-pick-all>select all</button>
+            <button type="button" class="copy" data-pick-none>clear</button>
+          </span>
+        </div>
+        <div class="picks">
+          {% for entry in result.files | sort(attribute="name") %}
+          <label class="pick"><input type="checkbox" name="pick" value="{{ entry.url }}"> {{ entry.name }}</label>
           {% endfor %}
-        </tbody>
-      </table>
+        </div>
+      </fieldset>
+      <div class="button-row picker-foot">
+        <button class="button is-quiet" type="submit">Build a YARA rule</button>
+        <span class="quiet">Author cyb3rp03t, and the rule says it was built from a bounded read.</span>
+      </div>
+    </form>
+    <div class="rule-out yara-out" id="yara-out" aria-live="polite">
+      <p class="empty">Pick one file or more above and the rule is written here.</p>
     </div>
     {% else %}
-    <p class="empty">The scan wrote no notes: nothing it asked for went wrong.</p>
+    <p class="empty">No files were listed, so there is nothing to write a rule from.</p>
+    {% endif %}
+  </div>
+
+  <div class="det-block">
+    <div class="det-h"><h3 class="sub-h">Rule pack</h3><span class="quiet">the indicators as hunts and block lists for the tools you run</span></div>
+    {% if detections is defined and detections %}
+      {% with options = detections.options, targets = detections.targets, left_out = detections.left_out,
+              types = detections.types, sources = detections.sources, tlp_levels = detections.tlp_levels,
+              zip_url = detections.zip_url %}
+        {% include "_detections.html" %}
+      {% endwith %}
+    {% else %}
+    <div class="det-panel" id="det-panel" hx-get="/runs/{{ name }}/detections" hx-trigger="load" hx-swap="outerHTML">
+      <p class="empty">
+        The rule pack loads here.
+        <a href="/runs/{{ name }}/detections">Open it on its own page</a>.
+      </p>
+    </div>
     {% endif %}
   </div>
 </section>
 
-<section class="run-panel{% if tab == 'settings' %} is-current{% endif %}" id="settings" aria-labelledby="settings-title">
-  <h2 class="section-title run-panel-title" id="settings-title">How this run was taken</h2>
-  <div class="card card-tight">
-    <dl class="settings-list">
-      <div><dt>depth</dt><dd>{{ value(result.options.get("depth")) }}</dd></div>
-      <div><dt>delay</dt><dd>{% if result.options.get("delay") is not none %}{{ result.options.get("delay") }}s{% else %}{{ value(none) }}{% endif %}</dd></div>
-      <div><dt>read heads</dt><dd>{{ "yes" if result.options.get("peek") else "no" }}</dd></div>
-      <div><dt>peek ceiling</dt><dd>{{ result.options.get("peek_bytes", 0) | human_size }}</dd></div>
-      <div><dt>private targets</dt><dd>{{ "allowed" if result.options.get("allow_private") else "refused" }}</dd></div>
-      <div><dt>started</dt><dd>{{ result.started_at.strftime("%Y-%m-%d %H:%M") }}</dd></div>
-    </dl>
-  </div>
+<section class="case-sec" id="settings" aria-labelledby="settings-title">
+  <h2 class="sec-h" id="settings-title"><span class="sec-n">06</span> Run settings
+    <span class="sec-c">how this walk ran</span></h2>
+  <dl class="identity settings-list">
+    <div><dt>depth</dt><dd>{{ value(result.options.get("depth")) }}</dd></div>
+    <div><dt>delay</dt><dd>{% if result.options.get("delay") is not none %}{{ result.options.get("delay") }}s{% else %}{{ value(none) }}{% endif %}</dd></div>
+    <div><dt>timeout</dt><dd>{% if result.options.get("timeout") is not none %}{{ result.options.get("timeout") }}s{% else %}{{ value(none) }}{% endif %}</dd></div>
+    <div><dt>read heads</dt><dd>{{ "yes" if result.options.get("peek") else "no" }}</dd></div>
+    <div><dt>peek ceiling</dt><dd>{{ result.options.get("peek_bytes", 0) | human_size }}</dd></div>
+    <div><dt>max requests</dt><dd>{{ value(result.options.get("max_requests")) }}</dd></div>
+    <div><dt>private targets</dt><dd>{{ "allowed" if result.options.get("allow_private") else "refused" }}</dd></div>
+    <div><dt>started</dt><dd>{{ result.started_at.strftime("%Y-%m-%d %H:%M") }}</dd></div>
+  </dl>
+
+  <section class="sub-sec" id="notes" aria-labelledby="notes-title">
+    <h3 class="sub-h" id="notes-title">Notes and errors <span class="sec-c">{{ result.errors | length }}</span></h3>
+    {% if result.errors %}
+    <ul class="notes">
+      {% for error in result.errors %}
+      {% set meaning = error.detail | explain %}
+      <li class="note-row">
+        <span class="quiet note-stage">{{ error.stage }}</span>
+        <span class="data note-url">{{ error.url | defang }}</span>
+        <span class="note-detail">
+          {{ error.detail }}
+          {% if meaning %}
+          <details class="why">
+            <summary>
+              <span aria-hidden="true">i</span>
+              <span class="why-label">what this means</span>
+            </summary>
+            <p>{{ meaning }}</p>
+          </details>
+          {% endif %}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">The scan wrote no notes: nothing it asked for went wrong.</p>
+    {% endif %}
+  </section>
 </section>
+
+</div>
+
+{#- The preview. With the script it is a dialog over the page, opened by any file
+    link and stepped with j and k; without it, it is the last part of the page,
+    filled when the address carries ?file=. -#}
+<div class="preview-column" id="preview-sheet" data-sheet{% if preview %} data-sheet-open{% endif %}>
+  <div class="sheet-bar">
+    <span class="sheet-name data" data-sheet-name aria-hidden="true"></span>
+    <span class="sheet-nav">
+      <button type="button" class="copy sheet-step" data-sheet-step="-1">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+        <span class="visually-hidden">Previous file</span>
+      </button>
+      <span class="sheet-pos data" data-sheet-pos aria-live="polite"></span>
+      <button type="button" class="copy sheet-step" data-sheet-step="1">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+        <span class="visually-hidden">Next file</span>
+      </button>
+      <span class="hints js-only"><kbd>j</kbd> and <kbd>k</kbd> for the next and previous file</span>
+    </span>
+    <button type="button" class="copy sheet-close" data-sheet-close>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"></path><path d="M18 6 6 18"></path></svg>
+      <span class="visually-hidden">Back to files</span>
+    </button>
+  </div>
+  <div class="card" id="preview" aria-live="polite">
+    {% if preview %}
+      {% with entry = preview.entry, mismatch = preview.mismatch, iocs = preview.iocs,
+              referenced_by = preview.referenced_by, siblings = preview.siblings,
+              hex_rows = preview.hex_rows, source_html = preview.source_html,
+              verdict_ready = preview.verdict_ready, note = preview.note %}
+        {% include "_file.html" %}
+      {% endwith %}
+    {% else %}
+    <h2 class="section-title flush-top">Preview</h2>
+    <p class="empty">
+      Pick a file from the inventory. Contents come from the saved run, so
+      opening one here sends nothing to the target.
+    </p>
+    <p class="empty">
+      An open file shows its sha256 and md5 with a button that asks a public
+      scanner about the hash, the first bytes as hex, the indicators found in
+      it, the files that name it, and the other versions in its family.
+    </p>
+    {% endif %}
+  </div>
+</div>
+<div class="sheet-scrim" data-sheet-scrim hidden></div>
 
 {% endblock %}

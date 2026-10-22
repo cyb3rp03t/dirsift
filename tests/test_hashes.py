@@ -49,7 +49,7 @@ def response(body: bytes, *, truncated: bool) -> Response:
     )
 
 
-# -- the hashes themselves -------------------------------------------------
+# The hashes themselves
 
 
 def test_a_whole_file_gets_both_hashes():
@@ -65,7 +65,7 @@ def test_a_cut_read_has_neither_hash():
     assert read.md5 is None
 
 
-# -- what the walker records -----------------------------------------------
+# What the walker records
 
 
 def test_the_walker_records_both_hashes_and_the_first_bytes(server):
@@ -88,7 +88,7 @@ def test_a_file_cut_at_the_ceiling_is_marked_partial(server):
     assert payload.head_hex == PAYLOAD[:16].hex()
 
 
-# -- the report ------------------------------------------------------------
+# The report
 
 
 def test_the_report_lists_the_hashes_it_has():

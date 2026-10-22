@@ -26,7 +26,7 @@ from urllib.parse import unquote
 
 from pydantic import BaseModel, Field
 
-from .extract import defang
+from .extract import SecretMask, defang
 from .models import Entry, Ioc, Kind, ScanResult
 from .report import human_size, network_note
 
@@ -186,7 +186,7 @@ class RunDiff(BaseModel):
         )
 
 
-# -- where things are -------------------------------------------------------
+# Where things are
 
 
 def _rel(url: str, root: str) -> str:
@@ -269,7 +269,7 @@ def _ref(path: str, entry: Entry) -> FileRef:
     )
 
 
-# -- the passes --------------------------------------------------------------
+# The passes
 
 
 def _server(old: ScanResult, new: ScanResult) -> list[FieldChange]:
@@ -378,10 +378,11 @@ def _families(old: _Side, new: _Side) -> tuple[list[FamilyChange], int]:
     return changes, same
 
 
-def _row(ioc: Ioc) -> IndicatorRow:
+def _row(ioc: Ioc, mask: SecretMask) -> IndicatorRow:
     return IndicatorRow(
         ioc_type=ioc.ioc_type,
-        defanged=ioc.defanged,
+        # A secret is named by its kind, length and digest, never quoted.
+        defanged=mask.indicator(ioc),
         label=ioc.label,
         asn=ioc.asn,
         as_name=ioc.as_name,
@@ -399,6 +400,7 @@ def _indicators(old: _Side, new: _Side, diff: RunDiff) -> None:
     before = {ioc.key(): ioc for ioc in old.result.iocs}
     after = {ioc.key(): ioc for ioc in new.result.iocs}
     diff.unchanged.indicators = len(before.keys() & after.keys())
+    old_mask, new_mask = SecretMask(old.result.iocs), SecretMask(new.result.iocs)
 
     def sources(ioc: Ioc, side: _Side) -> list[str]:
         urls = ioc.sources or [ioc.source_url]
@@ -407,11 +409,15 @@ def _indicators(old: _Side, new: _Side, diff: RunDiff) -> None:
     for key in sorted(after.keys() - before.keys()):
         ioc = after[key]
         fair = any(old.compared(path) for path in sources(ioc, new))
-        (diff.indicators_added if fair else diff.indicators_not_compared).append(_row(ioc))
+        (diff.indicators_added if fair else diff.indicators_not_compared).append(
+            _row(ioc, new_mask)
+        )
     for key in sorted(before.keys() - after.keys()):
         ioc = before[key]
         fair = any(new.compared(path) for path in sources(ioc, old))
-        (diff.indicators_removed if fair else diff.indicators_not_compared).append(_row(ioc))
+        (diff.indicators_removed if fair else diff.indicators_not_compared).append(
+            _row(ioc, old_mask)
+        )
 
 
 def _top(side: _Side) -> tuple[str | None, float]:
@@ -536,7 +542,7 @@ def diff_runs(old: ScanResult, new: ScanResult) -> RunDiff:
 
 
 
-# -- the page ------------------------------------------------------------------
+# The page
 
 _FIELD_LABEL = {
     "target_ip": "Address",
@@ -655,7 +661,7 @@ def render_diff_markdown(diff: RunDiff) -> str:
         add(f"> {warning}")
         add("")
 
-    # -- server --------------------------------------------------------------
+    # Server
     if diff.server:
         add("## Server")
         add("")
@@ -673,7 +679,7 @@ def render_diff_markdown(diff: RunDiff) -> str:
             add(f"| {label} | {change.old or '-'} | {change.new or '-'} |")
         add("")
 
-    # -- kind changes --------------------------------------------------------
+    # Kind changes
     if diff.kind_changes:
         add("## Changed type")
         add("")
@@ -686,7 +692,7 @@ def render_diff_markdown(diff: RunDiff) -> str:
             )
         add("")
 
-    # -- changed files -------------------------------------------------------
+    # Changed files
     if diff.changed:
         add("## Changed files")
         add("")
@@ -706,7 +712,7 @@ def render_diff_markdown(diff: RunDiff) -> str:
             add(f"| `{change.path}` | {change.verdict} | {before} | {after} |")
         add("")
 
-    # -- families ------------------------------------------------------------
+    # Families
     if diff.families:
         add("## Version families")
         add("")
@@ -731,7 +737,7 @@ def render_diff_markdown(diff: RunDiff) -> str:
                 )
         add("")
 
-    # -- indicators ----------------------------------------------------------
+    # Indicators
     if diff.indicators_added or diff.indicators_removed or diff.indicators_not_compared:
         add("## Indicators")
         add("")
@@ -759,7 +765,7 @@ def render_diff_markdown(diff: RunDiff) -> str:
             add("```")
             add("")
 
-    # -- entry point ---------------------------------------------------------
+    # Entry point
     if diff.entry_point:
         point = diff.entry_point
         before = f"`{point.old_path}` ({point.old_score}/100)" if point.old_path else "nothing"
@@ -769,7 +775,7 @@ def render_diff_markdown(diff: RunDiff) -> str:
         add(f"The file ranked first as the driver changed: {before} then, {after} now.")
         add("")
 
-    # -- inventory -----------------------------------------------------------
+    # Inventory
     for title, refs in (
         ("Added", diff.added),
         ("Removed", diff.removed),
@@ -784,7 +790,7 @@ def render_diff_markdown(diff: RunDiff) -> str:
             add(_file_line(ref))
         add("")
 
-    # -- what stayed ---------------------------------------------------------
+    # What stayed
     kept = diff.unchanged
     add("## Unchanged")
     add("")
@@ -797,7 +803,7 @@ def render_diff_markdown(diff: RunDiff) -> str:
     )
     add("")
 
-    # -- notes ---------------------------------------------------------------
+    # Notes
     if diff.notes:
         add("## Notes")
         add("")

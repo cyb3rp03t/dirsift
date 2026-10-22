@@ -264,7 +264,7 @@ class _Collector:
             )
 
 
-# -- the pivots ----------------------------------------------------------------
+# The pivots
 
 
 def _listing(result: ScanResult, out: _Collector) -> None:
@@ -592,7 +592,7 @@ def select(
     ]
 
 
-# -- the page --------------------------------------------------------------------
+# The page
 
 
 def _code(text: str) -> str:

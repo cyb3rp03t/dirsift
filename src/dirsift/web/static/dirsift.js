@@ -1,9 +1,9 @@
 /* DirSift console behaviour.
 
    Everything here is progressive: the pages work without it, this only makes
-   reading faster. No network calls live in this file. The scan itself is the
-   only thing that talks to a target, and that happens on the server when the
-   button is pressed. */
+   reading faster. No network calls to anywhere but this console live in this
+   file. The scan itself is the only thing that talks to a target, and that
+   happens on the server when the button is pressed. */
 
 (function () {
   "use strict";
@@ -15,6 +15,10 @@
         handler(hit, event);
       }
     });
+  }
+
+  function all(selector, root) {
+    return Array.prototype.slice.call((root || document).querySelectorAll(selector));
   }
 
   /* One shared live region in the corner. A short line fades in, is announced
@@ -42,9 +46,27 @@
     }, 2000);
   }
 
+  function writeClipboard(value) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(value);
+    }
+    return new Promise(function (resolve, reject) {
+      var field = document.createElement("textarea");
+      field.value = value;
+      document.body.appendChild(field);
+      field.select();
+      try {
+        document.execCommand("copy");
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+      document.body.removeChild(field);
+    });
+  }
+
   /* Copy a hash or an indicator without selecting it by hand. */
   onClick("[data-copy]", function (button) {
-    var value = button.getAttribute("data-copy");
     var say = function (text) {
       var previous = button.getAttribute("data-label") || button.textContent;
       button.setAttribute("data-label", previous);
@@ -54,28 +76,28 @@
       }, 1200);
       toast(text, text === "blocked" ? "alert" : null);
     };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(value).then(
-        function () {
-          say("copied");
-        },
-        function () {
-          say("blocked");
+    writeClipboard(button.getAttribute("data-copy")).then(
+      function () { say("copied"); },
+      function () { say("blocked"); }
+    );
+  });
+
+  /* Copy a detection file with its live values. The page only ever shows the
+     defanged preview; the live text is fetched from this console's download
+     route at the moment of the copy and goes straight to the clipboard. */
+  onClick("[data-copy-live]", function (button) {
+    fetch(button.getAttribute("data-copy-live"), { credentials: "same-origin" })
+      .then(function (reply) {
+        if (!reply.ok) {
+          throw new Error(String(reply.status));
         }
+        return reply.text();
+      })
+      .then(writeClipboard)
+      .then(
+        function () { toast("Copied, with live values"); },
+        function () { toast("The copy was blocked", "alert"); }
       );
-      return;
-    }
-    var field = document.createElement("textarea");
-    field.value = value;
-    document.body.appendChild(field);
-    field.select();
-    try {
-      document.execCommand("copy");
-      say("copied");
-    } catch (error) {
-      say("blocked");
-    }
-    document.body.removeChild(field);
   });
 
   /* Preview tabs: contents, hex, links. */
@@ -85,10 +107,10 @@
       return;
     }
     var wanted = tab.getAttribute("aria-controls");
-    group.querySelectorAll(".tab").forEach(function (other) {
+    all(".tab", group).forEach(function (other) {
       other.setAttribute("aria-selected", String(other === tab));
     });
-    group.querySelectorAll(".tab-panel").forEach(function (panel) {
+    all(".tab-panel", group).forEach(function (panel) {
       panel.hidden = panel.id !== wanted;
     });
   });
@@ -119,7 +141,7 @@
     var needle = input.value.toLowerCase();
     var hits = 0;
     var first = null;
-    pre.querySelectorAll(".line").forEach(function (line) {
+    all(".line", pre).forEach(function (line) {
       var match = needle !== "" && line.textContent.toLowerCase().indexOf(needle) !== -1;
       line.classList.toggle("is-hit", match);
       if (match) {
@@ -145,8 +167,8 @@
 
   /* Walk the listing from the keyboard: j and k, or the arrow keys. The keys
      belong to the page until focus is inside the listing rows: anywhere else
-     the arrows scroll, as they should. Enter on a row's pick box opens the
-     file, the same as Enter on its name. */
+     the arrows scroll, as they should. Enter on a row's own controls does what
+     they say; Enter anywhere else on a row opens its file. */
   document.addEventListener("keydown", function (event) {
     if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) {
       return;
@@ -155,12 +177,12 @@
     if (!body) {
       return;
     }
-    var row = event.target.closest("tr");
+    var row = event.target.closest("[data-row]");
     var own = row && row.querySelector("[data-file-url]");
     if (!own) {
       return;
     }
-    if (event.key === "Enter" && event.target !== own) {
+    if (event.key === "Enter" && event.target !== own && !event.target.closest("a, button")) {
       event.preventDefault();
       own.click();
       return;
@@ -170,13 +192,51 @@
     if (!down && !up) {
       return;
     }
-    var files = Array.prototype.slice.call(body.querySelectorAll("[data-file-url]"));
+    /* Files inside a folded group are skipped: the walk follows what is shown. */
+    var files = all("[data-row] [data-file-url]", body).filter(function (link) {
+      return link.offsetParent !== null;
+    });
     var next = files.indexOf(own) + (down ? 1 : -1);
     if (next < 0 || next >= files.length) {
       return;
     }
     event.preventDefault();
     files[next].focus();
+  });
+
+  /* An inventory row folds its details away; the chevron, or a click on the
+     row's empty space, opens them. */
+  function toggleRow(row) {
+    var open = row.classList.toggle("is-open");
+    var button = row.querySelector(".row-toggle");
+    if (button) {
+      button.setAttribute("aria-expanded", String(open));
+    }
+  }
+
+  onClick(".row-toggle", function (button) {
+    toggleRow(button.closest("[data-row]"));
+  });
+
+  onClick("[data-row] > .rh", function (head, event) {
+    if (event.target.closest("a, button, input, label")) {
+      return;
+    }
+    toggleRow(head.closest("[data-row]"));
+  });
+
+  /* "Open preview" inside a row's details is a plain link to ?file= for a page
+     without the script. With it, the row's own file link does the opening, so
+     there is one way a file opens. */
+  onClick("[data-opens]", function (link, event) {
+    var url = link.getAttribute("data-opens");
+    var own = fileLinks().filter(function (other) {
+      return other.getAttribute("data-file-url") === url;
+    })[0];
+    if (own) {
+      event.preventDefault();
+      own.click();
+    }
   });
 
   /* Keep the open file in the address bar so a preview can be shared or reloaded.
@@ -195,100 +255,234 @@
     document.body.addEventListener("htmx:afterOnLoad", run);
   }
 
-  /* Run page tabs. Without the script they are links down a page that carries
-     every part of the run; with it, one part shows at a time and the address
-     bar keeps which (?tab=), so a link to the Notes tab opens on the notes. The
-     server reads ?tab= too and marks that part, so nothing jumps on load. */
-  var showRunTab = null;
-  var tablist = document.querySelector("[data-run-tablist]");
-  if (tablist) {
-    var runTabs = Array.prototype.slice.call(tablist.querySelectorAll("[data-tab]"));
-    var panelOf = function (tab) {
-      return document.getElementById(tab.getAttribute("data-tab"));
-    };
-    tablist.setAttribute("role", "tablist");
-    tablist.setAttribute("aria-label", "Parts of this run");
-    runTabs.forEach(function (tab) {
-      var panel = panelOf(tab);
-      tab.setAttribute("role", "tab");
-      tab.setAttribute("aria-controls", panel.id);
-      panel.setAttribute("role", "tabpanel");
-      panel.setAttribute("aria-labelledby", tab.id);
-    });
+  /* the case file: section menu, old links, sticky offset */
 
-    var showTab = function (key, how) {
-      var wanted = runTabs.filter(function (tab) {
-        return tab.getAttribute("data-tab") === key;
-      })[0];
-      if (!wanted) {
+  var top = document.querySelector(".app-top");
+  function measureTop() {
+    if (top) {
+      document.documentElement.style.setProperty("--top-h", top.offsetHeight + "px");
+    }
+  }
+  measureTop();
+  window.addEventListener("resize", measureTop);
+
+  var spy = document.querySelector("[data-spy]");
+  var spyLinks = spy ? all("[data-spy-link]", spy) : [];
+
+  function markSection(id) {
+    var current = null;
+    spyLinks.forEach(function (link) {
+      var on = link.getAttribute("href") === "#" + id;
+      if (on) {
+        link.setAttribute("aria-current", "location");
+        current = link;
+      } else {
+        link.removeAttribute("aria-current");
+      }
+    });
+    /* Keep the lit part in view inside the pill on a narrow screen, without
+       scrolling the page itself. While a keyboard user is on the menu the
+       pill stays where focus put it, or the focused part slides out of view. */
+    var focusOnMenu = spy.contains(document.activeElement);
+    if (current && !focusOnMenu && spy.scrollWidth > spy.clientWidth) {
+      var left = current.offsetLeft - (spy.clientWidth - current.offsetWidth) / 2;
+      spy.scrollLeft = Math.max(0, left);
+    }
+  }
+
+  /* The lit part is the last one whose top has passed under the sticky bar.
+     A part picked from the menu stays lit until the reader scrolls on their
+     own, so a short part near the end of the page still lights when asked. */
+  if (spy) {
+    var sections = spyLinks.map(function (link) {
+      return document.getElementById(link.getAttribute("href").slice(1));
+    }).filter(Boolean);
+    var chosenPart = null;
+    var queued = false;
+    var settle = function () {
+      queued = false;
+      if (chosenPart) {
+        markSection(chosenPart);
         return;
       }
-      runTabs.forEach(function (tab) {
-        var on = tab === wanted;
-        tab.setAttribute("aria-selected", String(on));
-        tab.setAttribute("tabindex", on ? "0" : "-1");
-        tab.classList.toggle("is-current", on);
-        panelOf(tab).classList.toggle("is-current", on);
+      var line = ((top && top.offsetHeight) || 0) + 24;
+      var lit = sections[0];
+      sections.forEach(function (section) {
+        if (section.getBoundingClientRect().top <= line) {
+          lit = section;
+        }
       });
-      if (how && how.remember) {
-        var url = new URL(window.location.href);
-        url.searchParams.set("tab", key);
-        url.hash = "";
-        window.history.replaceState(window.history.state, "", url);
-      }
-      if (how && how.focus) {
-        wanted.focus();
+      if (lit) {
+        markSection(lit.id);
       }
     };
-    showRunTab = showTab;
-
-    var fromHash = window.location.hash.slice(1);
-    var current = tablist.querySelector(".run-tab.is-current") || runTabs[0];
-    showTab(
-      runTabs.some(function (tab) { return tab.getAttribute("data-tab") === fromHash; })
-        ? fromHash
-        : current.getAttribute("data-tab")
-    );
-
-    onClick("[data-tab], [data-tab-link]", function (link, event) {
-      event.preventDefault();
-      var key = link.getAttribute("data-tab") || link.getAttribute("data-tab-link");
-      showTab(key, { remember: true, focus: link.hasAttribute("data-tab-link") });
+    window.addEventListener("scroll", function () {
+      if (!queued) {
+        queued = true;
+        window.requestAnimationFrame(settle);
+      }
+    }, { passive: true });
+    ["wheel", "touchstart", "keydown"].forEach(function (name) {
+      window.addEventListener(name, function () {
+        chosenPart = null;
+      }, { passive: true });
     });
-
-    tablist.addEventListener("keydown", function (event) {
-      var at = runTabs.indexOf(event.target);
-      if (at === -1) {
-        return;
-      }
-      var next = null;
-      if (event.key === "ArrowRight") {
-        next = (at + 1) % runTabs.length;
-      } else if (event.key === "ArrowLeft") {
-        next = (at - 1 + runTabs.length) % runTabs.length;
-      } else if (event.key === "Home") {
-        next = 0;
-      } else if (event.key === "End") {
-        next = runTabs.length - 1;
-      }
-      if (next === null) {
-        return;
-      }
-      event.preventDefault();
-      showTab(runTabs[next].getAttribute("data-tab"), { remember: true, focus: true });
+    spyLinks.forEach(function (link) {
+      link.addEventListener("click", function () {
+        chosenPart = link.getAttribute("href").slice(1);
+        markSection(chosenPart);
+      });
+      /* A browser leaves a half shown part where it is when Tab reaches it,
+         so the pill slides until the whole part is inside it. */
+      link.addEventListener("focus", function () {
+        var box = spy.getBoundingClientRect();
+        var part = link.getBoundingClientRect();
+        if (part.left < box.left) {
+          spy.scrollLeft -= box.left - part.left;
+        } else if (part.right > box.right) {
+          spy.scrollLeft += part.right - box.right;
+        }
+      });
     });
+    settle();
+  }
 
-    window.addEventListener("hashchange", function () {
-      showTab(window.location.hash.slice(1), { remember: true });
+  /* A link made when the run page had tabs (?tab=notes) lands on that part.
+     The server marks the part it recognised; the address bar is rewritten to
+     the anchor so the link reads the way the page now works. */
+  var landing = document.querySelector("[data-land]");
+  var landOn = null;
+  if (landing) {
+    landOn = document.getElementById(landing.getAttribute("data-land"));
+    if (landOn) {
+      var moved = new URL(window.location.href);
+      moved.searchParams.delete("tab");
+      moved.hash = landOn.id;
+      window.history.replaceState(window.history.state, "", moved);
+    }
+  } else if (window.location.hash.length > 1 && !new URL(window.location.href).searchParams.get("file")) {
+    landOn = document.getElementById(window.location.hash.slice(1));
+  }
+
+  /* The rule pack loads after the page, above the run settings, and pushes
+     what is below it down. Until the reader moves the page themselves, a
+     landing is kept in place after each late swap. */
+  function land() {
+    if (landOn) {
+      landOn.scrollIntoView({ block: "start" });
+    }
+  }
+  if (landOn) {
+    window.requestAnimationFrame(land);
+    ["wheel", "touchstart", "keydown", "mousedown"].forEach(function (name) {
+      window.addEventListener(name, function () {
+        landOn = null;
+      }, { passive: true, once: true });
     });
   }
 
-  /* On a narrow screen the listing and the preview do not fit side by side, so
-     the preview opens as a sheet over the listing. Without the script there is
-     no sheet: the preview stays in the page, below the listing. The sheet takes
-     one history entry when it opens, so the browser's back button closes it. */
-  var narrow = window.matchMedia("(max-width: 1099px)");
+  /* indicators: one kind at a time, and the first forty at once */
+
+  var timeline = document.querySelector("[data-iocs]");
+  var moreWrap = document.querySelector("[data-more-wrap]");
+  var CAP = 40;
+  if (timeline) {
+    var count = timeline.children.length;
+    if (count > CAP) {
+      timeline.classList.add("is-capped");
+    } else if (moreWrap) {
+      moreWrap.hidden = true;
+    }
+  }
+
+  onClick("[data-more]", function () {
+    if (timeline) {
+      timeline.classList.remove("is-capped");
+    }
+    if (moreWrap) {
+      moreWrap.hidden = true;
+    }
+  });
+
+  onClick("[data-facet]", function (button) {
+    var kind = button.getAttribute("data-facet");
+    all("[data-facet]").forEach(function (other) {
+      other.setAttribute("aria-pressed", String(other === button));
+    });
+    if (!timeline) {
+      return;
+    }
+    all(".tl", timeline).forEach(function (row) {
+      row.hidden = kind !== "" && row.getAttribute("data-ioc-type") !== kind;
+    });
+    /* A single kind shows in full; all kinds go back to the first forty unless
+       the reader already asked for everything. */
+    if (kind !== "") {
+      timeline.classList.remove("is-capped");
+    } else if (moreWrap && !moreWrap.hidden) {
+      timeline.classList.add("is-capped");
+    }
+  });
+
+  /* detections: the YARA picker and the rule pack */
+
+  var yaraForm = document.querySelector("[data-yara-form]");
+
+  function picked() {
+    return yaraForm ? all("input[name=pick]:checked", yaraForm) : [];
+  }
+
+  function sayPicked() {
+    var label = yaraForm && yaraForm.querySelector("[data-pick-count]");
+    if (!label) {
+      return;
+    }
+    var n = picked().length;
+    label.textContent = n === 0 ? "No file picked" : n === 1 ? "1 picked" : n + " picked";
+  }
+  sayPicked();
+
+  if (yaraForm) {
+    yaraForm.addEventListener("change", sayPicked);
+  }
+
+  function pickEvery(on) {
+    if (!yaraForm) {
+      return;
+    }
+    all("input[name=pick]", yaraForm).forEach(function (box) {
+      box.checked = on;
+    });
+    sayPicked();
+    yaraForm.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  onClick("[data-pick-all]", function () {
+    pickEvery(true);
+  });
+
+  onClick("[data-pick-none]", function () {
+    pickEvery(false);
+  });
+
+  /* The zip carries a YARA file only for the files picked above. */
+  onClick("[data-zip]", function (link) {
+    var url = new URL(link.getAttribute("href"), window.location.href);
+    url.searchParams.delete("pick");
+    picked().forEach(function (box) {
+      url.searchParams.append("pick", box.value);
+    });
+    link.setAttribute("href", url.pathname + url.search);
+  });
+
+  /* the preview dialog */
+
+  /* A file opens as a dialog over the case file, at every width (full screen
+     on a phone). Without the script there is no dialog: the preview is the
+     last part of the page. The dialog takes one history entry when it opens,
+     so the browser's back button closes it. */
   var sheet = document.querySelector("[data-sheet]");
+  var scrim = document.querySelector("[data-sheet-scrim]");
   var sheetReturn = null;
   var sheetPushed = false;
   var sheetInert = [];
@@ -302,22 +496,62 @@
     return preview && preview.querySelector(".preview-name");
   }
 
-  function focusPreviewHeading() {
-    var heading = sheetHeading();
-    if (heading) {
-      heading.focus();
-    }
+  function fileLinks() {
+    return all("[data-listing-rows] [data-row] [data-file-url]");
   }
 
-  /* The sheet lives inside the files panel. If some other tab is showing, the
-     panel is display:none and the sheet would open invisibly, locking the page
-     behind an inert backdrop. Open it only when its own panel is on screen. */
-  function sheetPanelShown() {
+  function shownFile() {
+    var panel = document.querySelector("#preview .preview");
+    return panel && panel.getAttribute("data-preview-file");
+  }
+
+  function selectedLink() {
+    return document.querySelector("[data-listing-rows] .link-button.is-selected");
+  }
+
+  /* The bar over the dialog: the file's name, where it sits among the files,
+     and the previous and next buttons, which follow the inventory order. */
+  function paintBar() {
     if (!sheet) {
-      return false;
+      return;
     }
-    var panel = sheet.closest(".run-panel");
-    return !panel || panel.classList.contains("is-current");
+    var links = fileLinks();
+    var url = shownFile();
+    var at = -1;
+    links.forEach(function (link, index) {
+      if (at === -1 && link.getAttribute("data-file-url") === url) {
+        at = index;
+      }
+    });
+    var pos = sheet.querySelector("[data-sheet-pos]");
+    var name = sheet.querySelector("[data-sheet-name]");
+    var heading = sheetHeading();
+    if (name) {
+      name.textContent = heading ? heading.textContent.trim() : "";
+    }
+    if (pos) {
+      pos.textContent = at === -1 ? "" : String(at + 1) + " / " + String(links.length);
+    }
+    all("[data-sheet-step]", sheet).forEach(function (button) {
+      var to = at + Number(button.getAttribute("data-sheet-step"));
+      button.disabled = at === -1 || to < 0 || to >= links.length;
+    });
+  }
+
+  function stepFile(by) {
+    var links = fileLinks();
+    var url = shownFile();
+    var at = -1;
+    links.forEach(function (link, index) {
+      if (at === -1 && link.getAttribute("data-file-url") === url) {
+        at = index;
+      }
+    });
+    var next = links[at + by];
+    if (at === -1 || !next) {
+      return;
+    }
+    next.click();
   }
 
   function setOutsideInert(on) {
@@ -328,9 +562,12 @@
       sheetInert = [];
       return;
     }
+    var keep = function (node) {
+      return node === scrim || node.id === "toast-region" || node.tagName === "SCRIPT";
+    };
     for (var node = sheet; node && node !== document.body; node = node.parentElement) {
       Array.prototype.forEach.call(node.parentElement.children, function (sibling) {
-        if (sibling !== node && !sibling.inert && sibling.tagName !== "SCRIPT") {
+        if (sibling !== node && !sibling.inert && !keep(sibling)) {
           sibling.inert = true;
           sheetInert.push(sibling);
         }
@@ -339,7 +576,7 @@
   }
 
   function openSheet(returnTo) {
-    if (!sheet || !narrow.matches || !sheetPanelShown()) {
+    if (!sheet) {
       return;
     }
     if (!sheetIsOpen()) {
@@ -349,8 +586,12 @@
       sheet.setAttribute("aria-modal", "true");
       sheet.setAttribute("aria-label", "File preview");
       document.documentElement.classList.add("sheet-open");
+      if (scrim) {
+        scrim.hidden = false;
+      }
       setOutsideInert(true);
     }
+    paintBar();
     var heading = sheetHeading();
     if (heading) {
       heading.focus();
@@ -366,12 +607,24 @@
     sheet.removeAttribute("aria-modal");
     sheet.removeAttribute("aria-label");
     document.documentElement.classList.remove("sheet-open");
+    if (scrim) {
+      scrim.hidden = true;
+    }
     setOutsideInert(false);
     sheetPushed = false;
-    var back = sheetReturn && document.contains(sheetReturn) ? sheetReturn
-      : document.querySelector("[data-listing-rows] .link-button.is-selected");
+    /* Back to the link that opened the dialog, unless j and k moved on to
+       another file: then to that file's row, which is where the reader is. */
+    var current = selectedLink();
+    var opener = sheetReturn && document.contains(sheetReturn) ? sheetReturn : null;
+    var back = opener && current && opener.getAttribute("data-file-url") !== current.getAttribute("data-file-url")
+      ? current
+      : opener || current;
     sheetReturn = null;
-    if (back && narrow.matches) {
+    if (back) {
+      var group = back.closest("details");
+      if (group && !group.open) {
+        group.open = true;
+      }
       back.focus();
     }
   }
@@ -386,6 +639,9 @@
     }
     var url = new URL(window.location.href);
     url.searchParams.delete("file");
+    if (url.hash === "#preview-sheet") {
+      url.hash = "";
+    }
     window.history.replaceState({}, "", url);
     finishClose();
   }
@@ -400,12 +656,12 @@
     var hasFile = new URL(window.location.href).searchParams.get("file");
     if (sheetIsOpen() && !hasFile) {
       finishClose();
-    } else if (!sheetIsOpen() && hasFile && narrow.matches && sheet && sheetHeading()) {
+    } else if (!sheetIsOpen() && hasFile && sheet && sheetHeading()) {
       /* The forward button brought ?file= back: re-open the sheet so the screen
          matches the address bar. We sit on the pushed entry again, so the back
          button (or Esc) can step off it to close. */
       sheetPushed = true;
-      openSheet(document.querySelector("[data-listing-rows] .link-button.is-selected"));
+      openSheet(selectedLink());
     }
   });
 
@@ -413,50 +669,106 @@
     closeSheet();
   });
 
+  onClick("[data-sheet-scrim]", function () {
+    closeSheet();
+  });
+
+  onClick("[data-sheet-step]", function (button) {
+    stepFile(Number(button.getAttribute("data-sheet-step")));
+  });
+
   document.addEventListener("keydown", function (event) {
-    if (event.key === "Escape" && sheetIsOpen()) {
+    if (!sheetIsOpen()) {
+      return;
+    }
+    if (event.key === "Escape") {
       event.preventDefault();
       closeSheet();
+      return;
+    }
+    var typing = event.target.closest && event.target.closest("input, textarea, select");
+    var plain = !(event.ctrlKey || event.altKey || event.metaKey || event.shiftKey);
+    if (plain && !typing && (event.key === "j" || event.key === "k")) {
+      event.preventDefault();
+      stepFile(event.key === "j" ? 1 : -1);
+      return;
+    }
+    /* Focus stays in the dialog: the page behind is inert, and Tab wraps. */
+    if (event.key === "Tab") {
+      var stops = all(
+        "a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex='0']",
+        sheet
+      ).filter(function (node) {
+        return node.offsetParent !== null;
+      });
+      if (!stops.length) {
+        return;
+      }
+      var first = stops[0];
+      var last = stops[stops.length - 1];
+      var here = document.activeElement;
+      if (event.shiftKey && (here === first || !sheet.contains(here))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (here === last || !sheet.contains(here))) {
+        event.preventDefault();
+        first.focus();
+      }
     }
   });
 
-  narrow.addEventListener("change", function () {
-    if (!narrow.matches) {
-      finishClose();
-    }
-  });
-
-  /* Whatever lands in the preview (a file, a comparison, a rule) opens the
-     sheet. htmx 4 reports the swap target, not the button, as the source when
+  /* Whatever lands in the preview (a file, a comparison, a verdict) opens the
+     dialog. htmx 4 reports the swap target, not the button, as the source when
      the button is removed by the swap (a link inside the preview), so the file
      that is now shown is read from the swapped-in panel, not from the trigger.
      The panel stamps its own file url (data-preview-file), and a 404 panel
      stamps data-preview-miss so the address bar is not pointed at a file the
-     run does not have. */
+     run does not have. Swaps elsewhere on the page (the YARA rule, the rule
+     pack) are left alone. */
+  function landsInPreview(trigger, preview) {
+    if (!trigger) {
+      return false;
+    }
+    if (trigger === preview || preview.contains(trigger) || !document.contains(trigger)) {
+      return true;
+    }
+    /* A load from the address bar (?file=) reports the document or a text node
+       as the source; only an element can be asked where it was aimed. */
+    var node = trigger instanceof Element ? trigger : trigger.parentElement;
+    if (!node) {
+      return false;
+    }
+    var aimed = node.closest("[hx-target]");
+    return Boolean(aimed && aimed.getAttribute("hx-target") === "#preview");
+  }
+
+  onSwap(function () {
+    window.requestAnimationFrame(land);
+  });
+
   onSwap(function (trigger) {
     var preview = document.getElementById("preview");
     var panel = preview && preview.querySelector(".preview");
-    /* Every swap on the run page lands in the preview; a page without one (the
-       scan page's polling box) has nothing here to sync. */
-    if (!panel) {
+    if (!panel || !landsInPreview(trigger, preview)) {
       return;
     }
     var fileUrl = panel.getAttribute("data-preview-file");
-    var isMiss = Boolean(panel && panel.hasAttribute("data-preview-miss"));
+    var isMiss = panel.hasAttribute("data-preview-miss");
 
     if (fileUrl && !isMiss) {
       var url = new URL(window.location.href);
       url.searchParams.set("file", fileUrl);
-      if (narrow.matches && sheet && !sheetIsOpen()) {
+      url.hash = "";
+      if (sheet && !sheetIsOpen()) {
         /* htmx 4 marks the entry it starts on and, on a back step to a marked
            entry, refetches the whole page. Unmark it: the sheet owns this step. */
         window.history.replaceState({}, "", window.location.href);
         window.history.pushState({ sheet: true }, "", url);
         sheetPushed = true;
       } else {
-        window.history.replaceState({}, "", url);
+        window.history.replaceState(sheetPushed ? { sheet: true } : {}, "", url);
       }
-      document.querySelectorAll("[data-listing-rows] tr").forEach(function (row) {
+      all("[data-listing-rows] [data-row]").forEach(function (row) {
         var own = row.querySelector("[data-file-url]");
         var on = Boolean(own && own.getAttribute("data-file-url") === fileUrl);
         row.classList.toggle("is-selected", on);
@@ -466,40 +778,20 @@
       });
     }
 
-    /* Where focus returns when the sheet closes: the button that opened it,
-       unless that button lives inside the sheet (a preview-internal link), in
-       which case keep the listing row that opened the sheet. */
+    /* Where focus returns when the sheet closes: the link that opened it,
+       unless that link lives inside the sheet (a preview-internal link), in
+       which case keep the row that opened the sheet. */
     var returnTo = trigger && trigger.tagName === "FORM"
       ? trigger.querySelector("[type=submit]")
       : trigger;
-    if (returnTo && sheet && sheet.contains(returnTo)) {
+    if (returnTo && (sheet.contains(returnTo) || !document.contains(returnTo))) {
       returnTo = null;
     }
-    /* A preview-internal link was swapped out with the rest of the panel, so
-       htmx hands back a button that is no longer in the document (or, in some
-       builds, the preview target itself). Either way it means the move came
-       from inside the preview, not from the listing. */
-    var fromPreview = Boolean(
-      trigger && (trigger === preview || preview.contains(trigger) || !document.contains(trigger))
-    );
-    if (narrow.matches && sheet) {
-      openSheet(returnTo); /* moves focus to the panel heading */
-    } else if (fromPreview) {
-      /* Desktop: a listing click keeps focus on the row, but navigating from
-         inside the preview moves focus to the new panel heading. */
-      focusPreviewHeading();
-    }
+    openSheet(returnTo); /* moves focus to the panel heading */
   });
 
-  /* A narrow page opened with ?file= starts with the sheet up. The server
-     already forces the files tab for a ?file= link; switch to it here too so
-     the sheet never opens behind a hidden panel even if that is somehow off. */
-  if (new URL(window.location.href).searchParams.get("file") && sheetHeading()) {
-    if (showRunTab) {
-      showRunTab("files");
-    }
-    if (narrow.matches) {
-      openSheet(document.querySelector("[data-listing-rows] .link-button.is-selected"));
-    }
+  /* A page opened with ?file= starts with the dialog up. */
+  if (sheet && sheet.hasAttribute("data-sheet-open") && sheetHeading()) {
+    openSheet(selectedLink());
   }
 })();

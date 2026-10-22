@@ -1,0 +1,21 @@
+{#- The rule pack as a page of its own: what a browser without the script gets
+    when it follows the panel link or sends the filter form. The panel itself
+    is the same partial htmx swaps in, so the two never drift apart. -#}
+{% extends "base.html" %}
+{% block title %}Rule pack: {{ root }}{% endblock %}
+{% block backlink %}
+<a class="backlink" href="/runs/{{ name }}#detections">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path>
+  </svg>
+  Back to the run
+</a>
+{% endblock %}
+{% block body %}
+<section class="case-sec" id="detections" aria-labelledby="pack-title">
+  <h1 class="sec-h" id="pack-title">Rule pack <span class="sec-c">rules and block lists from this run</span></h1>
+  <p class="quiet data">{{ root }}</p>
+  {% include "_detections.html" %}
+</section>
+{% endblock %}

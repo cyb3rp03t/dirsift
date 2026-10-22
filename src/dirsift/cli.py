@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
 
@@ -11,15 +12,17 @@ import httpx
 import typer
 from pydantic import ValidationError
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
+from . import detections
 from .analyze import analyze
 from .asn import ENV_PATH, AsnTable, default_table
 from .banner import banner
 from .diagnose import explain
 from .diff import diff_runs, render_diff_markdown
 from .enrich import MissingKey, api_key_from_env, lookup_hash
-from .extract import defang
+from .extract import SecretMask, defang
 from .fetcher import ScopeError
 from .models import ScanResult
 from .pivots import (
@@ -66,7 +69,9 @@ console = Console()
 err = Console(stderr=True)
 
 
-def _write(path: Path, text: str, label: str, *, say: Console | None = None) -> None:
+def _write(
+    path: Path, text: str, label: str, *, say: Console | None = None, newline: str | None = None
+) -> None:
     """Write a result, making the folder it was told to write into.
 
     The line saying where it went is printed on ``say``, stdout unless told
@@ -75,7 +80,7 @@ def _write(path: Path, text: str, label: str, *, say: Console | None = None) -> 
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text, encoding="utf-8", newline=newline)
     except OSError as exc:
         err.print(f"[red]could not write[/] {path}: {exc.strerror}")
         raise typer.Exit(code=2) from None
@@ -123,12 +128,14 @@ def _summary(result: ScanResult, candidates) -> None:
 
     if result.iocs:
         console.print(f"[bold]indicators[/] [dim]({len(result.iocs)} unique, defanged)[/]")
+        mask = SecretMask(result.iocs)
         for ioc in result.iocs[:12]:
             # Square brackets would be eaten as rich markup here.
             label = f" [dim]({ioc.label})[/]" if ioc.label else ""
             network = network_note(ioc.asn, ioc.as_name, ioc.country)
             where = f" [dim]{network}[/]" if network else ""
-            console.print(f"  [magenta]{ioc.ioc_type:<9}[/] {ioc.defanged}{label}{where}")
+            shown = escape(mask.indicator(ioc))
+            console.print(f"  [magenta]{ioc.ioc_type:<9}[/] {shown}{label}{where}")
         if len(result.iocs) > 12:
             console.print(f"  [dim]+{len(result.iocs) - 12} more, see the report[/]")
         console.print()
@@ -295,12 +302,18 @@ def iocs_cmd(
         bool, typer.Option("--fanged", help="Print live values. You asked for it.")
     ] = False,
 ) -> None:
-    """Print just the indicators, one per line, for piping."""
+    """Print just the indicators, one per line, for piping.
+
+    A secret is printed by its kind, fixed opening, length and digest, never
+    quoted, with --fanged as well: the run file holds the value.
+    """
     result, _ = _load(run)
+    mask = SecretMask(result.iocs)
     for ioc in result.iocs:
         if ioc_type and ioc.ioc_type != ioc_type:
             continue
-        sys.stdout.write((ioc.value if fanged else ioc.defanged) + "\n")
+        shown = mask.text(ioc.value) if fanged else mask.indicator(ioc)
+        sys.stdout.write(shown + "\n")
 
 
 @app.command("pivots")
@@ -462,6 +475,177 @@ def stix_cmd(
         f"[yellow]live indicators:[/] {out.name} is not defanged. Import it, but do not "
         "open it in a browser or paste it into a chat."
     )
+
+
+@app.command("detections")
+def detections_cmd(
+    run: Annotated[Path, typer.Argument(help="A run saved with --json.")],
+    target: Annotated[
+        str | None,
+        typer.Option("--target", "-t", help="A target id, or all. See --list."),
+    ] = None,
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out",
+            "-o",
+            help="A folder (or a .zip with --target all). Required: the files carry live values.",
+        ),
+    ] = None,
+    show_list: Annotated[
+        bool, typer.Option("--list", help="List the targets and what each would carry.")
+    ] = False,
+    tlp: Annotated[str, typer.Option("--tlp", help="CLEAR, GREEN, AMBER or RED.")] = "AMBER",
+    types: Annotated[
+        list[str] | None,
+        typer.Option("--type", help="Only these indicator types. Repeat or use commas."),
+    ] = None,
+    source: Annotated[
+        str | None, typer.Option("--source", help="Only indicators from this file (name or path).")
+    ] = None,
+    include_private: Annotated[
+        bool,
+        typer.Option(
+            "--include-private",
+            help="Keep private, reserved, multicast and documentation addresses.",
+        ),
+    ] = False,
+    include_protocol: Annotated[
+        bool,
+        typer.Option("--include-protocol", help="Keep protocol strings (SSH algorithm names)."),
+    ] = False,
+    profile: Annotated[
+        str, typer.Option("--profile", help="Block list comments: generic, paloalto or bare.")
+    ] = "generic",
+    pick: Annotated[
+        list[str] | None,
+        typer.Option("--pick", help="Files for the YARA target, by name. Repeat for more."),
+    ] = None,
+) -> None:
+    """Write detection content from a saved run: Sigma, SPL, KQL, block lists, CSV, STIX, YARA.
+
+    Everything is a file. Nothing is sent to any product, and nothing live is
+    printed: the files carry live values, so they only go where -o points.
+    """
+    banner(f"detections | {run.name}")
+    result, candidates = _load(run)
+    try:
+        options = detections.Options(
+            tlp=detections.parse_tlp(tlp),
+            types=detections.parse_types(types, detections.SHAREABLE),
+            exclude_private=not include_private,
+            exclude_protocol=not include_protocol,
+            profile=detections.parse_profile(profile),
+        )
+    except detections.BadOption as exc:
+        console.print(f"[bold]{exc}.[/bold]")
+        raise typer.Exit(code=2) from None
+
+    if source:
+        wanted = source.strip("/")
+        match = next(
+            (
+                entry
+                for entry in result.files
+                if entry.name == source
+                or entry.url.removeprefix(result.root_url).strip("/") == wanted
+                or entry.url == source
+            ),
+            None,
+        )
+        if match is None:
+            console.print(f"[bold]No file {source} in this run.[/bold]")
+            raise typer.Exit(code=2)
+        options = replace(options, source=match.url)
+    if pick:
+        names = set(pick)
+        options = replace(
+            options, pick=tuple(e.url for e in result.files if e.name in names)
+        )
+
+    bundle_run = detections.Run(result=result, name=run.stem, candidates=tuple(candidates))
+    info = detections.summary(bundle_run, options)
+
+    if show_list:
+        table = Table(box=None, pad_edge=False)
+        table.add_column("target", style="cyan")
+        table.add_column("carries", justify="right")
+        table.add_column("file", style="dim")
+        for row in info["targets"]:
+            count = "pick files" if row["needs_pick"] and not options.pick else str(row["count"])
+            table.add_row(row["id"], count, row["filename"])
+        console.print(table)
+        _left_out_table(info["left_out"])
+        return
+
+    if target is None or out is None:
+        console.print("[bold]Pass --target and --out[/bold] (or --list to see the targets).")
+        console.print("[dim]The files carry live values, so they are never printed.[/dim]")
+        raise typer.Exit(code=2)
+
+    if target == "all":
+        chosen = list(detections.TARGETS.values())
+    elif target in detections.TARGETS:
+        chosen = [detections.TARGETS[target]]
+        if chosen[0].needs_pick and not options.pick:
+            options = replace(options, pick=tuple(e.url for e in result.files))
+    else:
+        console.print(f"[bold]No target {target}.[/bold] One of: all, " + ", ".join(
+            detections.TARGETS))
+        raise typer.Exit(code=2)
+
+    if target == "all" and out.suffix.lower() == ".zip":
+        data = detections.zip_bytes(bundle_run, options, chosen)
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(data)
+        except OSError as exc:
+            err.print(f"[red]could not write[/] {out}: {exc.strerror}")
+            raise typer.Exit(code=2) from None
+        console.print(f"[green]archive written[/] {out}")
+    else:
+        names = []
+        for item in chosen:
+            if item.needs_pick and not options.pick:
+                continue
+            name = detections.filename(bundle_run, item)
+            names.append(name)
+            _write(
+                out / name,
+                detections.render(item, bundle_run, options),
+                "written",
+                newline="\n",
+            )
+        if target == "all":
+            _write(
+                out / "MANIFEST.txt",
+                detections.manifest(bundle_run, options, names),
+                "written",
+                newline="\n",
+            )
+
+    table = Table(box=None, pad_edge=False, show_header=False)
+    table.add_column("what", style="cyan")
+    table.add_column("count", justify="right")
+    for kind, number in info["types"].items():
+        table.add_row(kind, str(number))
+    console.print(table)
+    _left_out_table(info["left_out"])
+    console.print(
+        f"[yellow]live indicators ({options.tlp_label}):[/] the files are not defanged. Import "
+        "them, but do not open them in a browser or paste them into a chat."
+    )
+
+
+def _left_out_table(counts: dict[str, int]) -> None:
+    table = Table(box=None, pad_edge=False, show_header=False, title="left out")
+    table.add_column("reason", style="dim")
+    table.add_column("count", justify="right", style="dim")
+    for reason, number in counts.items():
+        if number:
+            table.add_row(reason, str(number))
+    if table.row_count:
+        console.print(table)
 
 
 @app.command("check")
