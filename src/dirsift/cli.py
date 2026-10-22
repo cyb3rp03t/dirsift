@@ -22,6 +22,15 @@ from .enrich import MissingKey, api_key_from_env, lookup_hash
 from .extract import defang
 from .fetcher import ScopeError
 from .models import ScanResult
+from .pivots import (
+    ENGINES,
+    STRENGTHS,
+    build_pivots,
+    pivot_notes,
+    render_pivots_markdown,
+    render_pivots_plain,
+    select,
+)
 from .report import human_size, network_note, render_markdown
 from .rules import build_rules
 from .walker import ScanOptions, scan
@@ -291,6 +300,55 @@ def iocs_cmd(
         if ioc_type and ioc.ioc_type != ioc_type:
             continue
         sys.stdout.write((ioc.value if fanged else ioc.defanged) + "\n")
+
+
+@app.command("pivots")
+def pivots_cmd(
+    run: Annotated[Path, typer.Argument(help="A run saved with --json.")],
+    engine: Annotated[
+        str | None, typer.Option("--engine", "-e", help="Only this engine: shodan or fofa.")
+    ] = None,
+    strength: Annotated[
+        str | None,
+        typer.Option(
+            "--strength", "-s", help="Only this strength and stronger: narrow, medium, broad."
+        ),
+    ] = None,
+    plain: Annotated[
+        bool, typer.Option("--plain", help="One query per line, for piping.")
+    ] = False,
+    fanged: Annotated[
+        bool, typer.Option("--fanged", help="Print live values. You asked for it.")
+    ] = False,
+    out: Annotated[
+        Path | None, typer.Option("--out", "-o", help="Write here instead of stdout.")
+    ] = None,
+) -> None:
+    """Write search queries for sibling hosts from a saved run. Runs none of them.
+
+    Nothing is sent anywhere and no key is read. A query tells the engine what
+    you are looking at, so running one is a separate decision.
+    """
+    if engine is not None and engine not in ENGINES:
+        console.print(f"[bold]No engine called {engine}.[/bold] Pass shodan or fofa.")
+        raise typer.Exit(code=2)
+    if strength is not None and strength not in STRENGTHS:
+        console.print(f"[bold]No strength called {strength}.[/bold] Pass narrow, medium or broad.")
+        raise typer.Exit(code=2)
+    if not plain:
+        banner(f"pivots | {run.name}")
+
+    result, candidates = _load(run)
+    pivots = select(build_pivots(result, candidates), engine=engine, strength=strength)
+    if plain:
+        text = render_pivots_plain(pivots, fanged=fanged, with_engine=engine is None)
+    else:
+        text = render_pivots_markdown(pivots, result, pivot_notes(result, candidates))
+
+    if out:
+        _write(out, text, "pivots written")
+    else:
+        sys.stdout.write(text)
 
 
 #: md5, sha1 or sha256 and nothing else.

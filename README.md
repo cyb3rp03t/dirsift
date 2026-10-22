@@ -78,6 +78,10 @@ next build with, without ever running a sample.
   country, read from a table on your disk. No lookup service is asked, because
   asking one tells a stranger what you are looking at. Optional: without the
   table the scan is unchanged.
+- **Writes the searches for its siblings.** The title, the Server header, the
+  port, the distinctive file names and the network become Shodan and FOFA
+  queries for the other hosts built from the same kit. It writes them and runs
+  none of them.
 - **Writes the page.** A markdown triage report, plus a scaffold for the writeup
   that is left empty on purpose.
 
@@ -150,6 +154,12 @@ dirsift diff old.json new.json -o changes.md
 # just the indicators, for piping
 dirsift iocs run.json --type ipv4
 
+# search queries for hosts built from the same kit, written and not run
+dirsift pivots run.json -o pivots.md
+
+# only the narrowest Shodan queries, one per line, for piping
+dirsift pivots run.json -e shodan -s narrow --plain
+
 # sha256, md5 and path for the files read whole
 dirsift hashes run.json
 
@@ -185,7 +195,24 @@ folder leaves it under "not seen" instead, and the options that differ between
 the runs are printed beside it. A file cut at the peek ceiling has no hash, so
 its row says what the listing claims and not what the bytes did.
 
-### The console
+### Finding the siblings
+
+An operator rarely runs one server. The next one is stood up from the same kit,
+and it carries the same marks: the page title, the Server header, the port, the
+file names, the provider. `pivots` writes those as queries for Shodan and FOFA,
+ranked narrow, medium or broad, each with the reason it was ranked that way and
+a link that opens it in the engine.
+
+None of them is run. A query tells a stranger what you are looking at, so
+pasting one is your call, the same way the hash check is. Shodan also wants a
+logged-in account before it answers a filtered search.
+
+The engines index the page at the root of each port and do not walk below it.
+A listing found under `/files/` was never stored by them, so every query built
+from it is marked and trusted a step less, and a guess at the root's own title
+is added beside them. The syntax lives in one table in `pivots.py`, because the
+engines change it; when a query stops matching, check that table first.
+
 
 `dirsift web` serves a local page on `127.0.0.1:8000`. The run page leads with
 the target, the address it answered from and the numbers that decide whether to
@@ -279,7 +306,7 @@ full binary and never executes anything.
 
 ```bash
 uv sync
-uv run pytest          # 204 tests
+uv run pytest          # 242 tests
 uv run ruff check .
 ```
 
