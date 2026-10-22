@@ -107,6 +107,9 @@ class Ioc(BaseModel):
     # How it sat in the files. Defaults describe one live mention in code, so a
     # run saved before these existed loads as it always did.
     occurrences: int = 1
+    # How each file wrote it, keyed by the file's URL: live, or in whichever
+    # defanged form that file used. A YARA rule needs the bytes, not the idea.
+    spellings: dict[str, str] = Field(default_factory=dict)
     in_comment: bool = False  # every mention was on a comment line
     seen_live: bool = True  # at least one mention was written undefanged
 

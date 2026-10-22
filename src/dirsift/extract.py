@@ -27,12 +27,20 @@ from .models import Ioc
 
 # --- refang ---------------------------------------------------------------
 
+#: Every defanged way of writing each piece of an indicator, as regex
+#: alternatives, keyed by what it stands for. ``refang`` reads them one way and
+#: ``spelling_pattern`` the other, so a notation added here is understood by
+#: both. The order is the order refang applies them in.
+DEFANG_VARIANTS: dict[str, list[str]] = {
+    "http": [r"h\s*x\s*x\s*p"],
+    ".": [r"\[\s*\.\s*\]", r"\(\s*\.\s*\)", r"\{\s*\.\s*\}", r"\s+dot\s+"],
+    ":": [r"\[\s*:\s*\]", r"\(\s*:\s*\)"],
+    "@": [r"\[\s*@\s*\]", r"\(\s*@\s*\)", r"\s+at\s+"],
+    "/": [r"\[\s*/\s*\]"],
+}
+
 _REFANG_PATTERNS = [
-    (re.compile(r"h\s*x\s*x\s*p", re.I), "http"),
-    (re.compile(r"\[\s*\.\s*\]|\(\s*\.\s*\)|\{\s*\.\s*\}|\s+dot\s+", re.I), "."),
-    (re.compile(r"\[\s*:\s*\]|\(\s*:\s*\)"), ":"),
-    (re.compile(r"\[\s*@\s*\]|\(\s*@\s*\)|\s+at\s+", re.I), "@"),
-    (re.compile(r"\[\s*/\s*\]"), "/"),
+    (re.compile("|".join(variants), re.I), live) for live, variants in DEFANG_VARIANTS.items()
 ]
 
 
@@ -41,6 +49,45 @@ def refang(text: str) -> str:
     for pattern, replacement in _REFANG_PATTERNS:
         text = pattern.sub(replacement, text)
     return text
+
+
+def spelling_pattern(value: str) -> re.Pattern[str]:
+    """A pattern for every way the source could have written a live value.
+
+    The extractor matches on refanged text, so it knows ``evil.com`` but not
+    whether the file said ``evil[.]com``, ``evil(.)com`` or ``evil dot com``.
+    YARA matches bytes, so a rule needs the form the file used. Each piece of
+    the value that has defanged forms accepts the live form or any of them.
+    """
+    parts: list[str] = []
+    index = 0
+    while index < len(value):
+        if index == 0 and value[:4].lower() == "http":
+            parts.append("(?:http|" + "|".join(DEFANG_VARIANTS["http"]) + ")")
+            index += 4
+            continue
+        char = value[index]
+        if char in DEFANG_VARIANTS:
+            parts.append("(?:" + "|".join([re.escape(char), *DEFANG_VARIANTS[char]]) + ")")
+        else:
+            parts.append(re.escape(char))
+        index += 1
+    return re.compile("".join(parts), re.I)
+
+
+def spelling_in(text: str, value: str) -> str:
+    """How the source actually wrote a value: live if it can, else its defanged form.
+
+    Live as written first, then live in another case, then any defanged form.
+    When nothing matches, the live value stands in.
+    """
+    if value in text:
+        return value
+    for pattern in (re.compile(re.escape(value), re.I), spelling_pattern(value)):
+        match = pattern.search(text)
+        if match:
+            return match.group(0)
+    return value
 
 
 #: Indicator types that are live if pasted somewhere that linkifies them.
@@ -207,7 +254,6 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
         return []
 
     working = refang(text)
-    original = text.lower()
     found: dict[tuple[str, str], Ioc] = {}
 
     def add(ioc_type: str, value: str, start: int, end: int, label: str | None = None) -> None:
@@ -222,6 +268,9 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
             existing.occurrences += 1
             existing.in_comment = existing.in_comment and comment
             return
+        # The form this file used, which is what a YARA rule has to carry. Only
+        # network indicators have a defanged form to look for.
+        spelling = spelling_in(text, value) if ioc_type in NETWORK_TYPES else value
         ioc = Ioc(
             ioc_type=ioc_type,
             value=value,
@@ -234,10 +283,10 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
             context=defang_text(_context(working, start, end)),
             label=label,
             in_comment=comment,
-            # Matching runs on the refanged text, so positions do not line up
-            # with the original. Whether the value appears as written there is
-            # the question that matters: if not, the source only had it defanged.
-            seen_live=ioc_type not in NETWORK_TYPES or value.lower() in original,
+            spellings={source_url: spelling},
+            # Live when the file wrote it live, in whatever case. Matching runs
+            # on refanged text, so the spelling is the only honest witness.
+            seen_live=spelling.lower() == value.lower(),
         )
         found[ioc.key()] = ioc
 
@@ -313,6 +362,8 @@ def dedupe_iocs(iocs: list[Ioc]) -> list[Ioc]:
     for ioc in iocs:
         kept = out.setdefault(ioc.key(), ioc)
         if kept is not ioc:
+            for url, spelling in ioc.spellings.items():
+                kept.spellings.setdefault(url, spelling)
             kept.occurrences += ioc.occurrences
             kept.in_comment = kept.in_comment and ioc.in_comment
             kept.seen_live = kept.seen_live or ioc.seen_live
