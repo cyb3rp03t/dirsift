@@ -33,6 +33,7 @@ from .pivots import (
 )
 from .report import human_size, network_note, render_markdown
 from .rules import build_rules
+from .stix import build_bundle, bundle_json, left_out
 from .walker import ScanOptions, scan
 
 
@@ -419,6 +420,48 @@ def rules_cmd(
         _write(out, rules, f"{len(picked)} file(s) ->")
         return
     sys.stdout.write(rules)
+
+
+@app.command("stix")
+def stix_cmd(
+    run: Annotated[Path, typer.Argument(help="A run saved with --json.")],
+    out: Annotated[
+        Path,
+        typer.Option(
+            "--out", "-o", help="Write the bundle here. Required: it carries live values."
+        ),
+    ],
+) -> None:
+    """Export a saved run as a STIX 2.1 bundle. Carries live indicators; writes to a file only.
+
+    A platform matches live values and nothing else, so nothing in the bundle
+    is defanged. That is why it never goes to stdout, where it would end up in
+    a terminal scrollback or a pasted log.
+    """
+    banner(f"stix | {run.name}")
+    result, candidates = _load(run)
+    bundle = build_bundle(result, candidates)
+    _write(out, bundle_json(bundle), "bundle written")
+
+    counts: dict[str, int] = {}
+    for obj in bundle["objects"]:
+        kind = obj["type"]
+        if kind not in ("infrastructure", "indicator", "relationship"):
+            kind = "observables"
+        counts[kind] = counts.get(kind, 0) + 1
+
+    table = Table(box=None, pad_edge=False, show_header=False)
+    table.add_column("what", style="cyan")
+    table.add_column("count", justify="right")
+    for kind in ("infrastructure", "indicator", "observables", "relationship"):
+        table.add_row(kind, str(counts.get(kind, 0)))
+    for reason, number in left_out(result).items():
+        table.add_row(f"[dim]{reason}[/]", f"[dim]{number}[/]")
+    console.print(table)
+    console.print(
+        f"[yellow]live indicators:[/] {out.name} is not defanged. Import it, but do not "
+        "open it in a browser or paste it into a chat."
+    )
 
 
 @app.command("check")

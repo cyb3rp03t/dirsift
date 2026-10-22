@@ -82,6 +82,9 @@ next build with, without ever running a sample.
   port, the distinctive file names and the network become Shodan and FOFA
   queries for the other hosts built from the same kit. It writes them and runs
   none of them.
+- **Hands it to a platform.** A saved run exports as a STIX 2.1 bundle that
+  OpenCTI and MISP import as it is: the infrastructure, the files read whole, the
+  indicators and where each came from, with no verdict attached.
 - **Writes the page.** A markdown triage report, plus a scaffold for the writeup
   that is left empty on purpose.
 
@@ -167,6 +170,9 @@ dirsift hashes run.json
 dirsift rules run.json --out hunt.yar
 dirsift rules run.json --name install.bat
 
+# the run as a STIX 2.1 bundle for a platform, written to a file and nowhere else
+dirsift stix run.json -o run.stix.json
+
 # ask a public scanner about one digest, which is the only call that leaves
 dirsift check 13565af72d91125920826dd15db83bd6e48aecc1a466b9a639a6780eaf037342
 
@@ -194,6 +200,21 @@ in was listed again. A shallower walk, a spent request budget or a refused
 folder leaves it under "not seen" instead, and the options that differ between
 the runs are printed beside it. A file cut at the peek ceiling has no hash, so
 its row says what the listing claims and not what the bytes did.
+
+### Taking it to a platform
+
+`stix` turns a saved run into a STIX 2.1 bundle that OpenCTI and MISP import
+without editing: one Infrastructure for the directory, its URL and address, a
+File and a hash Indicator for every file read whole, and an Indicator for every
+address, domain and URL lifted out of them, tied to the file it came from.
+
+There is no Malware object and no verdict in it. DirSift collects; whether any
+of this is hostile is decided on the platform, by whoever reads it there.
+
+A platform matches live values, so the bundle carries them undefanged. That is
+why it is only ever written to the file you name, never to the terminal.
+Identifiers are deterministic: importing the same run twice adds nothing the
+second time, and an address found in two runs lands on the same object.
 
 ### Finding the siblings
 
@@ -306,7 +327,7 @@ full binary and never executes anything.
 
 ```bash
 uv sync
-uv run pytest          # 242 tests
+uv run pytest          # 276 tests
 uv run ruff check .
 ```
 

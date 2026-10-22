@@ -40,6 +40,9 @@ dev = [
     "pytest>=9.1,<10",
     "pytest-asyncio>=1.4,<2",
     "ruff>=0.16,<0.17",
+    "stix2>=3.0,<4",
+    # 3.3.1 on PyPI ships without its JSON schemas, so it cannot validate anything.
+    "stix2-validator>=3.2,<3.3",
 ]
 
 [build-system]
