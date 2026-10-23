@@ -151,12 +151,11 @@ the code rather than in this file, and there are tests that fail if they break:
   API key. Enrichment leaks what you are looking at, so it stays a decision you
   make rather than a default.
 
-The line this draws is the practical one from the Harvard Cyberlaw Clinic's
-researcher guidance: read what is served, take nothing that needs a credential,
-guess no paths, bypass no controls, write nothing. Downloading a file an open
-directory lists is not the same act as brute-forcing directory names, and only
-one of them is the category researchers get sued over. This is a tool for the
-first, and it cannot be configured into the second.
+The rule underneath is short: read what is served, take nothing that needs a
+credential, guess no paths, bypass no controls, write nothing. Downloading a
+file an open directory lists is not the same act as brute-forcing directory
+names. This is a tool for the first, and it cannot be configured into the
+second.
 
 ## Install
 
