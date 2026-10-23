@@ -159,6 +159,38 @@ _DOMAIN = re.compile(
     r"trycloudflare\.com|onion))(?![\w-])",
     re.I,
 )
+#: Where a scheme, or a bare ``//`` for a protocol relative link, opens a link.
+_LINK_OPENING = r"(?:\b(?P<scheme>[a-z][a-z0-9+.-]{1,31}):|(?<![\w:/]))//"
+#: ``host:8080/`` after the ``//`` is a port, not a password.
+_NOT_A_PORT = r"(?!\d{1,5}(?:[/?#\s\"'<>,;)\]]|$))"
+#: A link with a password in its userinfo, in any scheme or none:
+#: ``ftp://user:pw@host/``, ``//user:pw@host/``. The user may be empty
+#: (``redis://:pw@host``); the password may not. The password may hold an @, a
+#: slash, a quote or a bracket: it runs to an @ that is followed by a whole
+#: host, so ``p@ss`` and ``abc/def`` stay inside it.
+_URL_CREDENTIALS = re.compile(
+    _LINK_OPENING
+    + r"(?P<userinfo>(?P<user>[^\s:@/\"'<>]{0,128}):"
+    + _NOT_A_PORT
+    # Without a slash, the shortest password that leaves a whole host; with
+    # one, the link is broken already, so the longest.
+    + r"(?P<password>(?:[^\s\"/]|\t){1,256}?|(?:[^\s\"]|\t){1,256}))@"
+    + r"(?P<host>\[[0-9a-f:.]+\](?::\d{1,5})?|[^\s/\"'<>?#@\[\]()\\|`,;{}^]+)"
+    + r"(?=[\s/\"'<>?#)\]\\|`,;{}^]|$)"
+    + r"[^\s\"'<>`]*",
+    re.I,
+)
+#: The same opening with anything up to the next @ as the password, double
+#: quotes included. It finds no secret; it only marks text that no link or
+#: email may be cut from, so a password the pattern above cannot hold does not
+#: leak in two halves either.
+_URL_CREDENTIALS_LOOSE = re.compile(
+    _LINK_OPENING
+    + r"(?P<userinfo>[^\s:@/\"'<>]{0,128}:"
+    + _NOT_A_PORT
+    + r"[^\s@/]{1,256})@",
+    re.I,
+)
 _EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 
 _BTC = re.compile(r"\b(?:bc1[a-z0-9]{25,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b")
@@ -325,6 +357,19 @@ def _is_link(value: str) -> bool:
     return value.lower().startswith(("http://", "https://", "ftp://"))
 
 
+def _without_userinfo(url: str) -> str:
+    """A link with any ``user:password@`` cut out, so only the host is left.
+
+    Cut the way the credentials pattern reads it, to the last @ before the
+    host; a link with only a user loses everything up to its last @ before
+    the first slash.
+    """
+    match = _URL_CREDENTIALS.match(url)
+    if match:
+        return url[: match.start("userinfo")] + url[match.end("userinfo") + 1 :]
+    return re.sub(r"^((?:[a-z][a-z0-9+.-]*:)?//)[^/\s]*@", r"\1", url, flags=re.I)
+
+
 def _is_interesting_ip(raw: str) -> bool:
     try:
         ip = ipaddress.ip_address(raw)
@@ -354,6 +399,17 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
 
     working = refang(text)
     found: dict[tuple[str, str], Ioc] = {}
+    # Where a password sits inside a link. Only the url_credentials secret may
+    # cover it; any other indicator touching it would quote the password.
+    userinfo_spans = [
+        m.span("userinfo")
+        for pattern in (_URL_CREDENTIALS, _URL_CREDENTIALS_LOOSE)
+        for m in pattern.finditer(working)
+    ]
+    credential_spans: list[tuple[int, int]] = []
+
+    def in_userinfo(start: int, end: int) -> bool:
+        return any(start < span_end and span_start < end for span_start, span_end in userinfo_spans)
 
     def add(ioc_type: str, value: str, start: int, end: int, label: str | None = None) -> None:
         value = value.rstrip(".,;:)\"'")
@@ -363,6 +419,8 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
             value = value.strip()
             end = start + value.find(chr(10))
         if not value:
+            return
+        if ioc_type != "secret" and in_userinfo(start, end):
             return
         comment = is_comment(_line_at(working, start))
         existing = found.get((ioc_type, value.lower()))
@@ -381,7 +439,11 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
             # Only what is clickable needs neutering: the network indicators,
             # and a secret that is itself a link, such as a webhook. Defanging
             # a file path just makes it wrong.
-            defanged=defang(value) if ioc_type in NETWORK_TYPES or _is_link(value) else value,
+            defanged=(
+                defang(value)
+                if ioc_type in NETWORK_TYPES or _is_link(value) or label == "url_credentials"
+                else value
+            ),
             source_url=source_url,
             sources=[source_url],
             context=defang_text(_context(working, start, end)),
@@ -394,12 +456,35 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
         )
         found[ioc.key()] = ioc
 
+    for match in _URL_CREDENTIALS.finditer(working):
+        add("secret", match.group(0), *match.span(), label="url_credentials")
+        credential_spans.append(match.span())
+        host = match.group("host")
+        name = "" if host.startswith("[") else host.rsplit(":", 1)[0].lower()
+        if _DOMAIN.fullmatch(name) and not name.endswith(tuple(_NOISE_DOMAINS)):
+            # The domain pattern skips a name right after an @, but here it is
+            # the host, not the end of an email address.
+            add("domain", name, *match.span("host"))
+        if _is_link(match.group(0)):
+            # The link without its password, so the host still reads as a
+            # link. The pattern below stops at a bracket or a quote in the
+            # password, so the link is taken from here instead.
+            url = _without_userinfo(match.group(0))
+            if (urlparse(url).hostname or "") not in ("", *_NOISE_DOMAINS):
+                add("url", url, match.start("host"), match.end())
+
     for match in _URL.finditer(working):
-        url = match.group(0)
-        host = urlparse(url).hostname or ""
-        if host in _NOISE_DOMAINS:
+        if any(start <= match.start() < end for start, end in credential_spans):
             continue
-        add("url", url, *match.span())
+        url = _without_userinfo(match.group(0))
+        host = urlparse(url).hostname or ""
+        if not host or host in _NOISE_DOMAINS:
+            continue
+        # With the userinfo cut out of the value, the span starts at the host.
+        start = match.start()
+        if url != match.group(0):
+            start += match.group(0).index("@") + 1
+        add("url", url, start, match.end())
 
     for match in _IPV4.finditer(working):
         address, port = match.group(1), match.group(2)
@@ -486,6 +571,10 @@ def dedupe_iocs(iocs: list[Ioc]) -> list[Ioc]:
 
 #: How long a piece of a secret has to be before it counts as carrying it.
 SECRET_PIECE = 8
+#: A password from a link shorter than this is not blocked on its own: ``pw``
+#: would withhold every line that happens to hold those two letters. Its
+#: ``user:password`` still is.
+SHORTEST_BLOCKED_PASSWORD = 4
 
 
 def secret_material(ioc: Ioc) -> str:
@@ -496,6 +585,17 @@ def secret_material(ioc: Ioc) -> str:
     every key shares. Anything else is secret whole.
     """
     value = ioc.value
+    if ioc.label == "url_credentials":
+        # The user and the password; the scheme and the host are public. The
+        # password stands on its own line as well, so one too short to cut
+        # into pieces is still blocked wherever it is written whole.
+        match = _URL_CREDENTIALS.match(value.strip())
+        if not match:
+            return value
+        password = match.group("password").strip()
+        if len(password) < SHORTEST_BLOCKED_PASSWORD:
+            return match.group("userinfo")
+        return match.group("userinfo") + "\n" + password
     if _is_link(value):
         parsed = urlparse(value)
         return value.split(parsed.netloc, 1)[-1] if parsed.netloc else value
@@ -576,6 +676,14 @@ def _secret_opening(ioc: Ioc) -> str:
         # only that: a key escaped into one JSON line goes on after it.
         header = re.search(r"BEGIN [A-Z ]*?PRIVATE KEY(?: BLOCK)?", value)
         return header.group(0) if header else ""
+    if ioc.label == "url_credentials":
+        # The scheme and the host, never the userinfo in front of the host.
+        match = _URL_CREDENTIALS.match(value)
+        if not match:
+            return ""
+        scheme = match.group("scheme")
+        opening = f"{scheme.lower()}://" if scheme else "//"
+        return defang(f"{opening}{match.group('host').lower()}/")
     if _is_link(value):
         parsed = urlparse(value)
         if not parsed.netloc:

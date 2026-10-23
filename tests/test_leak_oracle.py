@@ -31,7 +31,14 @@ from typer.testing import CliRunner
 from dirsift import cli
 from dirsift.analyze import analyze
 from dirsift.detections import TARGETS, Options, Run, preview, render, zip_bytes
-from dirsift.extract import SecretMask, dedupe_iocs, extract_iocs, secret_shown
+from dirsift.extract import (
+    SecretMask,
+    dedupe_iocs,
+    defang,
+    defang_text,
+    extract_iocs,
+    secret_shown,
+)
 from dirsift.models import Entry, ScanResult
 from dirsift.rules import build_rules
 from dirsift.web import create_app
@@ -69,13 +76,41 @@ NAMED = {
     "api_secret": "ApiS3cretValue5150q",
     "dbPassword": "CamelPw0rdValue88q",
 }
+#: Passwords written into a link's userinfo, in a few schemes. One has dots,
+#: so its defanged spelling differs from the raw one; others carry a raw @, a
+#: slash or a quote, and one link has no scheme at all.
+URL_PASSWORDS = {
+    "ftp": "Ftp5ecretPass",
+    "https": "Hunt3r2xyzPw",
+    "mysql": "My.SqlR00t.Pw",
+    "redis": "R3disOnlyPass",
+    "at": "p@ssW0rdLong",
+    "slash": "abc/DEFgh12xy",
+    "relative": "ProtoRelPw77",
+    "quote": "Quo'tePassw0rd",
+}
+URL_CREDENTIALS = [
+    f"ftp://backup:{URL_PASSWORDS['ftp']}@203.0.113.10/",
+    f"https://admin:{URL_PASSWORDS['https']}@panel.example.com/panel",
+    f"mysql://root:{URL_PASSWORDS['mysql']}@198.51.100.7:3306/shop",
+    f"redis://:{URL_PASSWORDS['redis']}@198.51.100.8:6379/0",
+    f"https://admin:{URL_PASSWORDS['at']}@panel.example.com/x",
+    f"ftp://admin:{URL_PASSWORDS['slash']}@203.0.113.11/x",
+    f"//user:{URL_PASSWORDS['relative']}@cdn.example.com/a.js",
+    f"https://admin:{URL_PASSWORDS['quote']}@198.51.100.12/",
+]
+#: Every way an output could spell those passwords: raw, and defanged the way
+#: an indicator and a context line are.
+URL_PASSWORD_SPELLINGS = sorted(
+    {form for pw in URL_PASSWORDS.values() for form in (pw, defang(pw), defang_text(pw))}
+)
 
 #: What the oracle looks for, independent of what the extractor recognises. For
 #: the webhook that is the part after the host: ``https://`` and ``discord.``
 #: are public and would make the oracle cry wolf.
 SECRETS = [
     *PEM_LINES[1:4], AWS_KEY, *PASSWORDS, ENV_KEY, ENV_TOKEN, WEBHOOK_TOKEN, JWT,
-    AWS_SECRET, *NAMED.values(),
+    AWS_SECRET, *NAMED.values(), *URL_PASSWORD_SPELLINGS,
 ]
 
 FILES = {
@@ -95,6 +130,16 @@ FILES = {
         f"api_secret = {NAMED['api_secret']}\n"
         f"dbPassword: '{NAMED['dbPassword']}'\n"
         "LOG_LEVEL=debug\n"
+    ),
+    "links.txt": (
+        f"mirror {URL_CREDENTIALS[0]}\n"
+        f"panel = {URL_CREDENTIALS[1]}\n"
+        f"DATABASE_URL={URL_CREDENTIALS[2]}\n"
+        f"cache: {URL_CREDENTIALS[3]}\n"
+        f"login {URL_CREDENTIALS[4]}\n"
+        f"backup {URL_CREDENTIALS[5]}\n"
+        f"<script src={URL_CREDENTIALS[6]}></script>\n"
+        f"admin {URL_CREDENTIALS[7]}\n"
     ),
 }
 
@@ -450,3 +495,39 @@ def test_a_context_line_around_a_secret_is_masked_too():
         assert leaks(mask.indicator(ioc)) == [], ioc.value
     # Text that carries a piece of a secret without the whole of it is withheld.
     assert leaks(mask.text("prefix " + AWS_SECRET[3:20] + " suffix")) == []
+
+
+# Passwords written into a link: the link is a secret, its host is not.
+
+
+def test_a_password_in_a_link_never_reaches_an_indicator_or_a_context_line():
+    result = analyze(leak_result())[0]
+    mask = SecretMask(result.iocs)
+
+    def carries_password(text: str) -> bool:
+        return any(form in text for form in URL_PASSWORD_SPELLINGS)
+
+    # Not even a raw indicator in the run holds one: only the secret does. (A
+    # webhook is a URL and a secret at once, so this asks about passwords only.)
+    for ioc in result.iocs:
+        if ioc.ioc_type == "secret":
+            continue
+        assert not carries_password(ioc.value), ioc.value
+        assert not carries_password(ioc.defanged), ioc.defanged
+    for ioc in result.iocs:
+        assert leaks(mask.text(ioc.context or "")) == [], ioc.context
+        assert leaks(mask.indicator(ioc)) == [], ioc.value
+
+
+def test_every_link_with_a_password_is_a_named_secret():
+    result = leak_result()
+    found = [ioc for ioc in secret_iocs(result) if ioc.label == "url_credentials"]
+    assert len(found) == len(URL_CREDENTIALS)
+    for ioc in found:
+        assert SHOWN.match(secret_shown(ioc)), secret_shown(ioc)
+    values = {ioc.value for ioc in result.iocs}
+    # The hosts stay indicators in their own right.
+    assert {
+        "203.0.113.10", "198.51.100.7:3306", "198.51.100.8:6379", "203.0.113.11",
+        "198.51.100.12", "ftp://203.0.113.11/x", "https://198.51.100.12/",
+    } <= values
