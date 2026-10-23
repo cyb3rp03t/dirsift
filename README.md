@@ -32,7 +32,7 @@ It does not decide anything for you. It collects.
 
 **[Watch the full walkthrough](docs/demo.mp4)** (MP4). In order:
 
-1. The banner and a scan started from the terminal
+1. A scan started from the terminal
 2. Progress while the walk runs
 3. The case file: identity and likely drivers
 4. The inventory and the preview window
