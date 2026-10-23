@@ -8,9 +8,12 @@ address and the link without its userinfo stay ordinary indicators.
 from __future__ import annotations
 
 import hashlib
+import time
+from urllib.parse import urlparse
 
 import pytest
 
+from dirsift.analyze import analyze
 from dirsift.extract import (
     SecretMask,
     SecretPieces,
@@ -19,6 +22,7 @@ from dirsift.extract import (
     secret_material,
     secret_shown,
 )
+from dirsift.models import Entry, ScanResult
 
 SOURCE = "http://203.0.113.24/files/links.txt"
 
@@ -240,3 +244,132 @@ def test_a_link_with_no_scheme_is_still_a_secret():
 )
 def test_a_port_or_a_path_is_not_taken_for_a_password(text):
     assert secrets(text) == []
+
+
+# A password the strict pattern cannot hold (a double quote, a space) is still
+# a secret, so the context line around it is masked like any other.
+
+
+@pytest.mark.parametrize(
+    ("line", "password"),
+    [
+        ('proxy=http://user:p"assW0rdLong@198.51.100.21:3128', 'p"assW0rdLong'),
+        ('{"u":"http://user:Ab\\"cdW0rdLong9@198.51.100.21/"}', 'Ab\\"cdW0rdLong9'),
+        ("http://user:pass W0rdLong9@198.51.100.21/", "pass W0rdLong9"),
+        # Digits and a slash read as a port, but the @ and a whole host after
+        # them say it is a password.
+        ("http://user:12345/W0rdLong9@198.51.100.21/", "12345/W0rdLong9"),
+    ],
+)
+def test_a_password_outside_the_strict_pattern_is_still_masked(line, password):
+    iocs = found(line)
+    assert [ioc.label for ioc in iocs if ioc.ioc_type == "secret"] == ["url_credentials"]
+    tail = password[-9:]
+    for ioc in iocs:
+        if ioc.ioc_type != "secret":
+            assert tail not in ioc.value, ioc
+    mask = SecretMask(iocs)
+    for ioc in iocs:
+        assert tail not in mask.text(ioc.context), ioc.context
+        assert tail not in mask.indicator(ioc)
+    hosts = {ioc.value for ioc in iocs if ioc.ioc_type == "ipv4"}
+    assert hosts & {"198.51.100.21", "198.51.100.21:3128"}
+
+
+def test_the_rest_of_the_line_keeps_its_indicators():
+    line = (
+        'proxy=http://user:p"assW0rdLong@198.51.100.21:3128 contact admin@panel.example.net'
+        " http://198.51.100.22/x"
+    )
+    values = {ioc.value for ioc in plain(line)}
+    assert {"198.51.100.21:3128", "admin@panel.example.net", "http://198.51.100.22/x"} <= values
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "http://panel.example.com:8080/a@b",
+        "http://198.51.100.4:8080/a@b.html",
+        "http://panel.example.com:8080/x/y@z.png also http://198.51.100.5/ok",
+        "http://localhost:8080/a@b.example.com",
+        "http://[2001:db8::2]:8080/a@b",
+        "https://198.51.100.11:443/x?redir=https://198.51.100.12/",
+    ],
+)
+def test_a_host_with_a_port_and_an_at_in_its_path_is_not_a_secret(text):
+    assert secrets(text) == []
+
+
+def test_a_bracketed_host_is_never_read_as_a_user():
+    urls = [ioc.value for ioc in plain("http://[2001:db8::2]:8080/a@b") if ioc.ioc_type == "url"]
+    assert urls == ["http://[2001:db8::2]:8080/a@b"]
+
+
+# A bracketed host that is no IPv6 address must not stop the run.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "http://[1.2.3.4]/",
+        "http://[2001:db8::7]x",
+        "see http://[2001:db8::1]a.example.com/x",
+        "http://u:p@[1.2.3.4]/",
+        "http://[1:2]/",
+        "https://u:Ipv6Passw0rd@[1:2]:8443/x",
+        "http://panel.example.com:99999/x",
+    ],
+)
+def test_a_broken_bracketed_host_is_skipped_not_raised(text):
+    iocs = found(text)
+    for ioc in iocs:
+        if ioc.ioc_type == "url":
+            parsed = urlparse(ioc.value)
+            assert parsed.hostname
+            assert parsed.port is None or parsed.port < 65536
+    result = ScanResult(
+        root_url=SOURCE,
+        entries=[Entry(url=SOURCE, name="links.txt", parent_url=SOURCE, text_preview=text)],
+        iocs=iocs,
+    )
+    analyze(result)
+
+
+# A port-shaped password counts only when a real host follows the @.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "http://nas:5000/img/icon@2x.png",
+        "http://intranet:8080/users/@me",
+        "http://intranet:8080/~bob@team/x",
+        "http://cache:6379/a@b",
+    ],
+)
+def test_a_port_and_a_path_with_no_real_host_after_the_at_keep_their_url(text):
+    assert secrets(text) == []
+    urls = [ioc.value for ioc in plain(text) if ioc.ioc_type == "url"]
+    assert urls == [text]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # By the rule a real host follows the @, so these stay secrets: the
+        # reading that hides a password wins over the one that shows a path.
+        "http://jenkins:8080/job/a@b.example.com",
+        "http://web01:80/a@198.51.100.64",
+        "redis://cache:6379/0@198.51.100.62",
+        "http://user:12345/W0rdLong9@[2001:db8::4]/",
+    ],
+)
+def test_a_port_shaped_password_before_a_real_host_is_a_secret(text):
+    assert [ioc.label for ioc in secrets(text)] == ["url_credentials"]
+
+
+def test_a_long_hostile_line_is_read_in_linear_time():
+    line = "http://a.b:1/@c" * (256 * 1024 // 15)
+    started = time.perf_counter()
+    found(line)
+    assert time.perf_counter() - started < 1.5

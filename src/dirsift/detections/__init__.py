@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from ..extract import defang, defang_text
+from ..extract import defang, defang_text, host_of
 from ..models import ScanResult
 from . import csvfeed, kql, sigma, splunk
 from .blocklist import ASSUMES as LIST_ASSUMES
@@ -179,7 +179,7 @@ def live_values(result: ScanResult) -> list[str]:
                 values.add(ioc.value.split(":", 1)[0])
             if ioc.ioc_type == "url":
                 values.add(without_scheme(ioc.value))
-                values.add(urlparse(ioc.value).hostname or "")
+                values.add(host_of(ioc.value))
     wanted = [value for value in values if value and ("." in value or ":" in value)]
     return sorted(wanted, key=len, reverse=True)
 

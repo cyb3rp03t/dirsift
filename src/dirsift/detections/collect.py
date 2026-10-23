@@ -13,7 +13,7 @@ import ipaddress
 from dataclasses import dataclass, field
 from urllib.parse import unquote, urlparse
 
-from ..extract import SecretPieces
+from ..extract import SecretPieces, host_of
 from ..models import ScanResult
 from ..stix import timestamp
 from .options import Options, defang_value
@@ -206,7 +206,7 @@ def _url_reason(url: str, options: Options) -> str | None:
     A URL on shared hosting is the one precise way to name a thing there, so it
     stays: only the host is dropped from the host level lists.
     """
-    host = urlparse(url).hostname or ""
+    host = host_of(url)
     if not host:
         return RESERVED_NAME if options.exclude_private else None
     reason = _host_reason(host, options)
@@ -330,7 +330,7 @@ def collect(result: ScanResult, options: Options) -> Collected:
                 continue
             if selected(kind):
                 gather.keep(kind, value, paths, partial=partial)
-            host = urlparse(value).hostname
+            host = host_of(value)
             if host:
                 gather.host(host, paths, options, partial=partial)
 

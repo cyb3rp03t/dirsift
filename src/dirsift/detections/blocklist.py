@@ -44,7 +44,11 @@ ASSUMES = {
 
 
 def without_scheme(url: str) -> str:
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        # A host that does not read still loses its scheme.
+        return url.split("://", 1)[-1]
     return url[len(parts.scheme) + 3 :] if parts.scheme and "://" in url else url
 
 
