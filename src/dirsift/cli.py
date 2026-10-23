@@ -436,16 +436,29 @@ def iocs_cmd(
     fanged: Annotated[
         bool, typer.Option("--fanged", help="Print live values. You asked for it.")
     ] = False,
+    min_confidence: Annotated[
+        int | None,
+        typer.Option(
+            "--min-confidence", "-c", help="Only indicators scored this high or higher, 0 to 100."
+        ),
+    ] = None,
 ) -> None:
     """Print just the indicators, one per line, for piping.
 
     A secret is printed by its kind, fixed opening, length and digest, never
     quoted, with --fanged as well: the run file holds the value.
     """
+    if min_confidence is not None and not 0 <= min_confidence <= 100:
+        console.print(
+            f"[bold]{min_confidence} is not a confidence.[/bold] Pass a number from 0 to 100."
+        )
+        raise typer.Exit(code=2)
     result, _ = _load(run)
     mask = SecretMask(result.iocs)
     for ioc in result.iocs:
         if ioc_type and ioc.ioc_type != ioc_type:
+            continue
+        if min_confidence is not None and (ioc.confidence or 0) < min_confidence:
             continue
         shown = mask.text(ioc.value) if fanged else mask.indicator(ioc)
         sys.stdout.write(shown + "\n")

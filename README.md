@@ -72,7 +72,8 @@ next build with, without ever running a sample.
   the reasons shown. It is a candidate, not a verdict.
 - **Extracts indicators.** Addresses, URLs, domains, credential shapes, mutexes,
   registry keys and paths, each with the line it came from, deduped across
-  defanged and live spellings, and defanged on the way out.
+  defanged and live spellings, and defanged on the way out. Each one carries a
+  confidence from 0 to 100 that it is a live part of the kit, with the reasons.
 - **Names secrets without quoting them.** A key block, a cloud or chat token, or
   a value assigned to a name such as `password` is shown by its kind, its fixed
   opening (a PEM `BEGIN` line, `AKIA`), its length and the start of its sha256.
@@ -345,6 +346,41 @@ saved anywhere.
 The PDF is a closed document: no links, no scripts, no forms, no embedded files.
 The same run and assessment give the same bytes every time.
 
+### How sure is it
+
+Sixty indicators out of one directory are rarely sixty pieces of
+infrastructure. Some are the kit's own callbacks; others are an address in a
+comment, a resolver pinged to test the line, a domain someone wrote down
+defanged. Every indicator gets a confidence from 0 to 100 that it is a live,
+pivotable part of this kit. It is not a judgement of whether it is malicious:
+DirSift weighs how the indicator sits in the files, and every point comes with
+its reason.
+
+| Observation | Points |
+|---|---:|
+| Where every indicator starts | 50 |
+| Each further file that names it, up to +20 | +10 |
+| Kept across two or more builds of one version family | +15 |
+| In a config file or a script | +10 |
+| Named by the likely entry point | +5 |
+| Points back at the host being triaged | +10 |
+| Only ever in comments | -15 |
+| Written only defanged in the source | -25 |
+| A private, CGNAT or link-local address | -20 |
+| A public resolver such as 8.8.8.8 | -30 |
+| Seen only in files cut at the peek ceiling | -5 |
+
+75 and above is high, 50 to 74 medium, below that low. The report shows the
+band and score beside every value in its most useful table, and on every line
+of the appendix that lists all indicators, highest first, with the reasons
+beside the low ones; the run file keeps them all. STIX indicators carry the
+score as their confidence, and indicator pivots are ordered by it. `iocs` takes
+a threshold, and without one its output is unchanged:
+
+```bash
+dirsift iocs run.json -c 75
+```
+
 ### Revisiting a host
 
 Staging hosts change between visits: builds are added, detected ones are pulled,
@@ -495,7 +531,7 @@ full binary and never executes anything.
 
 ```bash
 uv sync
-uv run pytest -q       # 850+ tests
+uv run pytest -q       # 900+ tests
 uv run ruff check .
 ```
 

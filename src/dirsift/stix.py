@@ -345,6 +345,9 @@ def _indicators(build: _Builder, infrastructure: str, files: dict[str, str]) -> 
 
         sources = ioc.sources or [ioc.source_url]
         paths = sorted({_relative_url(url, build.root) for url in sources})
+        # How sure the run is that this is a live part of the kit. STIX's own
+        # confidence is the same 0 to 100 scale; it is not a verdict either.
+        scored = {"confidence": ioc.confidence} if ioc.confidence is not None else {}
         indicator = build.domain_object(
             "indicator",
             f"{kind}|{value}",
@@ -353,6 +356,7 @@ def _indicators(build: _Builder, infrastructure: str, files: dict[str, str]) -> 
             pattern=f"[{kind}:value = {pattern_string(value)}]",
             pattern_type="stix",
             valid_from=build.when,
+            **scored,
         )
         build.relate("indicates", indicator, infrastructure)
         for url in sources:

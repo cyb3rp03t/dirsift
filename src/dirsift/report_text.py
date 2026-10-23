@@ -254,7 +254,8 @@ MOST_USEFUL_NOTE = (
     "Pointing at the target first, then found in scripts and configuration, other text, logs; "
     "then found in more files. Values inside a file path, network base addresses, private, "
     "reserved and resolver addresses are left out here. At most 10 rows; Appendix B holds "
-    "every value."
+    "every value. Confidence is how sure the run is that the value is a live part of this "
+    "kit, from 0 to 100 (high from 75, medium from 50); it says nothing about intent."
 )
 MOST_USEFUL_NONE = "None: every network indicator here is one of the kinds left out above."
 NOTE_TARGET = "the target itself"
@@ -379,7 +380,9 @@ LISTING_CUT = "cut at the ceiling"
 LISTING_UNREAD = "not read"
 APPENDIX_B_LEAD = (
     "Defanged; secrets and masked wallet-shaped values by type, length and SHA256 fingerprint. "
-    "Sorted by value."
+    "Each line gives the value, its confidence (how sure the run is that it is a live part of "
+    "this kit, 0 to 100; it says nothing about intent) and the files it came from. Highest "
+    "confidence first, then by value; a low score carries its reasons."
 )
 CHANGELOG_GENERATED = "Generated from run {name}."
 CHANGELOG_GENERATED_UNSAVED = "Generated from a scan that was not saved."

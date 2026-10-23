@@ -39,7 +39,7 @@ from dirsift.report_pdf import MARGIN_BOTTOM, MISSING_GLYPH, drawable, escape, r
 #: Windows and Linux. A ReportLab upgrade or a deliberate layout change moves
 #: it: check the pages, then update this line on purpose (DIRSIFT_UPDATE_GOLDEN=1
 #: prints the new value).
-GOLDEN_SHA256 = "a3134866ca0ff3bb52f8cd4be1b4601c00a2303bbb3373c6d267526b5e57fcdc"
+GOLDEN_SHA256 = "dbdd7f8013f0c033d0e927129a90da468bef223016164b7822cc5983b072f85a"
 
 ACTIVE = re.compile(
     rb"/(URI|Annots|JavaScript|JS|Launch|OpenAction|AcroForm|EmbeddedFiles?|AA|RichMedia"

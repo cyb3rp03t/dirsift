@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 from .asn import AsnTable, default_table
 from .cluster import apply_clusters, find_clusters
+from .confidence import score_iocs
 from .extract import dedupe_iocs, extract_iocs
 from .glue import GlueCandidate, apply_glue, score_glue
 from .models import ScanResult
@@ -126,4 +127,5 @@ def analyze(
             ioc.asn, ioc.as_name, ioc.country = known[ioc.value]
 
     place_in_networks(result, asn_table if asn_table is not None else default_table())
+    score_iocs(result, candidates)
     return result, candidates

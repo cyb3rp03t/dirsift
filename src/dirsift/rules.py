@@ -156,7 +156,15 @@ def _literal(ioc: Ioc, entry: Entry) -> str:
     hxxp://panel[.]example[.]net carries the live spelling in the run. YARA
     matches bytes, so the rule has to carry the spelling the file uses, or it
     will never fire on the file it came from.
+
+    The spelling the extractor recorded for this file comes first: it was read
+    off the file itself, in whatever defanged form the file used, and each file
+    gets its own. A run saved before spellings were recorded falls back to
+    looking for the live value, then DirSift's own defanged form, in the text.
     """
+    recorded = ioc.spellings.get(entry.url)
+    if recorded:
+        return recorded
     text = entry.text_preview or ""
     if ioc.value and ioc.value in text:
         return ioc.value

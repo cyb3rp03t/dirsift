@@ -28,12 +28,20 @@ from .models import Ioc
 
 # Refang
 
+#: Every defanged way of writing each piece of an indicator, as regex
+#: alternatives, keyed by what it stands for. ``refang`` reads them one way and
+#: ``spelling_pattern`` the other, so a notation added here is understood by
+#: both. The order is the order refang applies them in.
+DEFANG_VARIANTS: dict[str, list[str]] = {
+    "http": [r"h\s*x\s*x\s*p"],
+    ".": [r"\[\s*\.\s*\]", r"\(\s*\.\s*\)", r"\{\s*\.\s*\}", r"\s+dot\s+"],
+    ":": [r"\[\s*:\s*\]", r"\(\s*:\s*\)"],
+    "@": [r"\[\s*@\s*\]", r"\(\s*@\s*\)", r"\s+at\s+"],
+    "/": [r"\[\s*/\s*\]"],
+}
+
 _REFANG_PATTERNS = [
-    (re.compile(r"h\s*x\s*x\s*p", re.I), "http"),
-    (re.compile(r"\[\s*\.\s*\]|\(\s*\.\s*\)|\{\s*\.\s*\}|\s+dot\s+", re.I), "."),
-    (re.compile(r"\[\s*:\s*\]|\(\s*:\s*\)"), ":"),
-    (re.compile(r"\[\s*@\s*\]|\(\s*@\s*\)|\s+at\s+", re.I), "@"),
-    (re.compile(r"\[\s*/\s*\]"), "/"),
+    (re.compile("|".join(variants), re.I), live) for live, variants in DEFANG_VARIANTS.items()
 ]
 
 
@@ -42,6 +50,45 @@ def refang(text: str) -> str:
     for pattern, replacement in _REFANG_PATTERNS:
         text = pattern.sub(replacement, text)
     return text
+
+
+def spelling_pattern(value: str) -> re.Pattern[str]:
+    """A pattern for every way the source could have written a live value.
+
+    The extractor matches on refanged text, so it knows ``evil.com`` but not
+    whether the file said ``evil[.]com``, ``evil(.)com`` or ``evil dot com``.
+    YARA matches bytes, so a rule needs the form the file used. Each piece of
+    the value that has defanged forms accepts the live form or any of them.
+    """
+    parts: list[str] = []
+    index = 0
+    while index < len(value):
+        if index == 0 and value[:4].lower() == "http":
+            parts.append("(?:http|" + "|".join(DEFANG_VARIANTS["http"]) + ")")
+            index += 4
+            continue
+        char = value[index]
+        if char in DEFANG_VARIANTS:
+            parts.append("(?:" + "|".join([re.escape(char), *DEFANG_VARIANTS[char]]) + ")")
+        else:
+            parts.append(re.escape(char))
+        index += 1
+    return re.compile("".join(parts), re.I)
+
+
+def spelling_in(text: str, value: str) -> str:
+    """How the source actually wrote a value: live if it can, else its defanged form.
+
+    Live as written first, then live in another case, then any defanged form.
+    When nothing matches, the live value stands in.
+    """
+    if value in text:
+        return value
+    for pattern in (re.compile(re.escape(value), re.I), spelling_pattern(value)):
+        match = pattern.search(text)
+        if match:
+            return match.group(0)
+    return value
 
 
 #: Indicator types that are live if pasted somewhere that linkifies them.
@@ -249,6 +296,31 @@ def _assignments(text: str) -> list[re.Match[str]]:
     return found
 
 
+#: How a comment line starts, after its indentation, across the languages a kit
+#: is written in: shell and Python, C-like code, ini files, batch, HTML, and the
+#: body lines of a /* block. Compared in lower case, so REM matches rem too.
+COMMENT_PREFIXES = ("#", "//", ";", "rem ", "::", "<!--", "/*", "*")
+
+
+def _line_at(text: str, start: int) -> str:
+    """The line a match starts on, without its line ending, whichever one it was."""
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", start)
+    return text[line_start : line_end if line_end != -1 else len(text)].rstrip("\r")
+
+
+def is_comment(line: str) -> bool:
+    """Whether a line is a comment rather than something the kit runs or reads.
+
+    A shebang starts with # and is the opposite of a comment: it says how the
+    file runs.
+    """
+    stripped = line.lstrip().lower()
+    if stripped.startswith("#!"):
+        return False
+    return stripped.startswith(COMMENT_PREFIXES)
+
+
 def _is_link(value: str) -> bool:
     return value.lower().startswith(("http://", "https://", "ftp://"))
 
@@ -292,6 +364,17 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
             end = start + value.find(chr(10))
         if not value:
             return
+        comment = is_comment(_line_at(working, start))
+        existing = found.get((ioc_type, value.lower()))
+        if existing is not None:
+            # The first mention keeps its context; later ones are only counted,
+            # and one mention outside a comment is enough to make it code.
+            existing.occurrences += 1
+            existing.in_comment = existing.in_comment and comment
+            return
+        # The form this file used, which is what a YARA rule has to carry. Only
+        # network indicators have a defanged form to look for.
+        spelling = spelling_in(text, value) if ioc_type in NETWORK_TYPES else value
         ioc = Ioc(
             ioc_type=ioc_type,
             value=value,
@@ -303,8 +386,13 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
             sources=[source_url],
             context=defang_text(_context(working, start, end)),
             label=label,
+            in_comment=comment,
+            spellings={source_url: spelling},
+            # Live when the file wrote it live, in whatever case. Matching runs
+            # on refanged text, so the spelling is the only honest witness.
+            seen_live=spelling.lower() == value.lower(),
         )
-        found.setdefault(ioc.key(), ioc)
+        found[ioc.key()] = ioc
 
     for match in _URL.finditer(working):
         url = match.group(0)
@@ -373,11 +461,19 @@ def dedupe_iocs(iocs: list[Ioc]) -> list[Ioc]:
 
     The first file keeps the context line, and every file that carried the
     indicator is listed in ``sources``: a family of builds usually shares its
-    callback, and the second build's rule has to match on it as well.
+    callback, and the second build's rule has to match on it as well. Mentions
+    add up; it is a comment only if it was one everywhere, and live if it was
+    written live anywhere.
     """
     out: dict[tuple[str, str], Ioc] = {}
     for ioc in iocs:
         kept = out.setdefault(ioc.key(), ioc)
+        if kept is not ioc:
+            for url, spelling in ioc.spellings.items():
+                kept.spellings.setdefault(url, spelling)
+            kept.occurrences += ioc.occurrences
+            kept.in_comment = kept.in_comment and ioc.in_comment
+            kept.seen_live = kept.seen_live or ioc.seen_live
         for url in ioc.sources or [ioc.source_url]:
             if url not in kept.sources:
                 kept.sources.append(url)

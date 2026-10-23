@@ -7,6 +7,11 @@ A hash matches one build; the address inside it survives the next one.
 
 from __future__ import annotations
 
+import json
+
+import pytest
+import yara
+
 from dirsift.models import Entry, Ioc, ScanResult
 from dirsift.rules import build_rules
 
@@ -214,3 +219,116 @@ def test_an_indicator_shared_by_two_builds_goes_into_both_rules():
     result, _ = analyze(result, asn_table=AsnTable())
     rules = build_rules(result, [result.entries[1]], "run")
     assert '"http://panel-gate.xyz/gate.php" ascii' in rules
+
+
+# Compiled and run against the file they came from
+
+
+def compiled_on(result: ScanResult, entries: list[Entry]) -> tuple[str, dict[str, list[str]]]:
+    """The rules, compiled by YARA, and which rules fire on each file's own bytes."""
+    rules = build_rules(result, entries, "run")
+    compiled = yara.compile(source=rules)
+    fired = {
+        entry.name: sorted(m.rule for m in compiled.match(data=entry.text_preview.encode("utf-8")))
+        for entry in entries
+    }
+    return rules, fired
+
+
+def rule_name(entry: Entry) -> str:
+    return "dirsift_run_" + entry.name.replace(".", "_")
+
+
+def text_file(name: str, text: str) -> Entry:
+    return Entry(
+        url=TARGET + name,
+        name=name,
+        depth=1,
+        kind="script",
+        fetched_bytes=len(text.encode("utf-8")),
+        text_preview=text,
+    )
+
+
+def analysed(*entries: Entry) -> ScanResult:
+    from dirsift.analyze import analyze
+    from dirsift.asn import AsnTable
+
+    result, _ = analyze(ScanResult(root_url=TARGET, entries=list(entries)), asn_table=AsnTable())
+    return result
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        "hxxps[:]//evil[.]com/gate",
+        "evil(.)com",
+        "evil{.}com",
+        "evil dot com",
+        "user[@]evil[.]com",
+    ],
+)
+def test_a_defanged_form_goes_into_the_rule_as_written_and_fires(written):
+    beacon = text_file("beacon.bat", f"rem panel\ncurl {written}\n")
+    result = analysed(beacon)
+    rules, fired = compiled_on(result, result.files)
+    assert f'"{written}" ascii' in rules
+    assert fired["beacon.bat"] == [rule_name(beacon)]
+
+
+def test_one_address_in_three_builds_is_in_all_three_rules_and_each_fires():
+    builds = [
+        text_file(f"svc{n}.exe", f"connect 198.51.100.77:8443\nbuild {n}\n") for n in (4, 5, 6)
+    ]
+    result = analysed(*builds)
+    rules, fired = compiled_on(result, result.files)
+    for build in builds:
+        block = rules.split("rule " + rule_name(build), 1)[1].split("\n}", 1)[0]
+        assert '"198.51.100.77:8443" ascii' in block
+        assert rule_name(build) in fired[build.name]
+
+
+def test_each_file_carries_its_own_spelling_of_one_domain():
+    live = text_file("live.bat", "curl http://cdn-gate.xyz/x\n")
+    noted = text_file("notes.bat", "rem old panel cdn-gate[.]xyz\n")
+    result = analysed(live, noted)
+    rules, fired = compiled_on(result, result.files)
+    live_block = rules.split("rule " + rule_name(live), 1)[1].split("\n}", 1)[0]
+    noted_block = rules.split("rule " + rule_name(noted), 1)[1].split("\n}", 1)[0]
+    assert '"cdn-gate.xyz" ascii' in live_block
+    assert '"cdn-gate[.]xyz" ascii' in noted_block
+    assert rule_name(live) in fired["live.bat"]
+    assert rule_name(noted) in fired["notes.bat"]
+
+
+def test_windows_line_endings_and_non_ascii_lines_still_fire():
+    text = "@echo off\r\nREM сервер ödeme: hxxp://cdn-gate[.]xyz/p\r\ncurl cdn-gate(.)xyz\r\n"
+    beacon = text_file("beacon.bat", text)
+    result = analysed(beacon)
+    rules, fired = compiled_on(result, result.files)
+    assert '"hxxp://cdn-gate[.]xyz/p" ascii' in rules
+    assert fired["beacon.bat"] == [rule_name(beacon)]
+
+
+def test_an_old_run_without_sources_or_spellings_still_builds_rules(tmp_path):
+    """The shape a run had before: only the first file, no spellings. It falls back."""
+    note = text_file("notes.txt", "see hxxp://panel[.]example[.]net/gate for the panel\n")
+    old = {
+        "root_url": TARGET,
+        "entries": [json.loads(note.model_dump_json())],
+        "iocs": [
+            {
+                "ioc_type": "url",
+                "value": "http://panel.example.net/gate",
+                "defanged": "hxxp://panel[.]example[.]net/gate",
+                "source_url": note.url,
+            }
+        ],
+    }
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps(old), encoding="utf-8")
+    loaded = ScanResult.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    assert loaded.iocs[0].spellings == {} and loaded.iocs[0].sources == []
+    rules, fired = compiled_on(loaded, loaded.files)
+    assert '"hxxp://panel[.]example[.]net/gate" ascii' in rules
+    assert fired["notes.txt"] == [rule_name(note)]

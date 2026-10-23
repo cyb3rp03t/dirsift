@@ -31,6 +31,7 @@ from . import detections
 from . import report_text as T
 from .analyze import analyze
 from .classify import INTERESTING_NAMES, mismatch
+from .confidence import band, short_reason
 from .detections.collect import PROTOCOL_DOMAINS, SHARED_HOSTS, address_reason
 from .detections.meta import Run
 from .detections.options import Options
@@ -578,6 +579,19 @@ class _Builder:
             return 2
         return 3
 
+    def confidence(self, ioc: Ioc) -> str:
+        """The band and score: how sure the run is the indicator is a live part of the kit."""
+        if ioc.confidence is None:
+            return "-"
+        return f"{band(ioc.confidence)} {ioc.confidence}"
+
+    def confidence_reasons(self, ioc: Ioc) -> str:
+        """A low score's reasons in short, since a low score is the one a reader will
+        want to argue with; high and medium stay bare."""
+        if ioc.confidence is None or band(ioc.confidence) != "low":
+            return ""
+        return defang_text(", ".join(short_reason(r) for r in ioc.confidence_reasons))
+
     def found_in(self, ioc: Ioc) -> str:
         srcs = ioc.sources or [ioc.source_url]
         first = code(self.rel(srcs[0]))
@@ -1123,8 +1137,9 @@ class _Builder:
             rows.append((TYPE_LABEL.get(t, t), str(len(items)), top,
                          "; ".join(n for n in notes if n) or "none"))
         useful = self.most_useful()
-        urows = [(TYPE_LABEL[i.ioc_type], code(self.shown(i)), self.net_cell(i),
-                  self.found_in(i), "; ".join(self.notes(i)) or "none") for i in useful]
+        urows = [(TYPE_LABEL[i.ioc_type], code(self.shown(i)), self.confidence(i),
+                  self.net_cell(i), self.found_in(i), "; ".join(self.notes(i)) or "none")
+                 for i in useful]
         sec.blocks = [
             Para(T.INDICATORS_LEAD),
             _table(["Type", "Values", "Mostly from", "Notes"], rows,
@@ -1134,7 +1149,8 @@ class _Builder:
             Note(T.MOST_USEFUL_NOTE),
         ]
         if urows:
-            sec.blocks.append(_table(["Type", "Value", "Network", "Found in", "Notes"], urows))
+            sec.blocks.append(_table(["Type", "Value", "Confidence", "Network", "Found in",
+                                      "Notes"], urows))
         else:
             sec.blocks.append(Para(T.MOST_USEFUL_NONE))
         return sec
@@ -1385,10 +1401,14 @@ class _Builder:
         blocks: list = [Note(T.APPENDIX_B_LEAD)]
         for t, items in by_type.items():
             lines = []
-            for i in items:
+            # Strongest first; ties keep the order by value they came in.
+            for i in sorted(items, key=lambda item: -(item.confidence or 0)):
                 srcs = ", ".join(self.rel(u) for u in (i.sources or [i.source_url]))
                 val = self.shown(i)
-                lines.append(f"{val:<48} {srcs}" if len(val) < 48 else f"{val} {srcs}")
+                head = f"{val:<48} " if len(val) < 48 else f"{val} "
+                line = f"{head}{self.confidence(i):<9} {srcs}"
+                why = self.confidence_reasons(i)
+                lines.append(f"{line}  ({why})" if why else line)
             blocks.append(Pre(tuple(lines), title=f"{TYPE_LABEL.get(t, t)} ({len(items)})"))
         sec.blocks = blocks
         return sec

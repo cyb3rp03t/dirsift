@@ -137,6 +137,8 @@ class Pivot(BaseModel):
     # indicator, which is printed defanged like every other indicator.
     shown_query: str = ""
     shown_url: str = ""
+    # For an indicator, how sure the run is that it is a live part of the kit.
+    confidence: int | None = None
 
 
 class _NeedsEscaping(ValueError):
@@ -525,6 +527,7 @@ def _indicators(result: ScanResult, out: _Collector) -> None:
         )
         shown = defang(ioc.value.split(":", 1)[0] if ioc.ioc_type == "ipv4" else ioc.value)
         for pivot in out.pivots[before:]:
+            pivot.confidence = ioc.confidence
             pivot.shown_query = _query(
                 pivot.engine, [(terms[0][0], shown)], check=False
             )
@@ -554,7 +557,11 @@ def _collect(result: ScanResult, candidates) -> _Collector:
 
 
 def _ordered(pivots: list[Pivot]) -> list[Pivot]:
-    """Strongest first, then by basis, engine and query, with repeats dropped."""
+    """Strongest first, then by basis, engine and query, with repeats dropped.
+
+    Indicator pivots are ordered by their confidence inside their strength, so
+    the callback the kit uses comes before the address in a comment.
+    """
     seen: set[tuple[str, str]] = set()
     unique = []
     for pivot in pivots:
@@ -566,7 +573,10 @@ def _ordered(pivots: list[Pivot]) -> list[Pivot]:
     for pivot in unique:
         pivot.shown_query = pivot.shown_query or pivot.query
         pivot.shown_url = pivot.shown_url or pivot.url
-    return sorted(unique, key=lambda p: (rank[p.strength], p.basis, p.engine, p.query))
+    return sorted(
+        unique,
+        key=lambda p: (rank[p.strength], p.basis, -(p.confidence or 0), p.engine, p.query),
+    )
 
 
 def build_pivots(result: ScanResult, candidates) -> list[Pivot]:
