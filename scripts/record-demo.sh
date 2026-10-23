@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rebuilds docs/demo.mp4 and docs/demo.gif from the harmless demo target.
+# Rebuilds docs/demo.mp4 from the harmless demo target.
 #
 # Everything runs on 127.0.0.1: docs/make-demo-target.py builds a fake open
 # directory on documentation addresses, docs/record-demo.py serves it, starts a

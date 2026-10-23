@@ -5,9 +5,8 @@ Usage, from the repository root:
     uv run --with playwright python docs/record-demo.py
     uv run --with playwright python docs/record-demo.py --ffmpeg path/to/ffmpeg
 
-Writes docs/demo.mp4 (every part, each behind a short title card) and
-docs/demo.gif (a few seconds of the best moments). Needs an ffmpeg build with
-libx264 and a Playwright Chromium (``playwright install chromium``).
+Writes docs/demo.mp4, every part behind a short title card. Needs an ffmpeg
+build with libx264 and a Playwright Chromium (``playwright install chromium``).
 
 Nothing here touches a real host. The target is the folder built by
 docs/make-demo-target.py, served on 127.0.0.1; the console runs against a
@@ -432,7 +431,7 @@ async def showcase(page: Page, d: Driver, cast: Screencast) -> None:
                                   else len(SHOWCASE_FIRST)))
         current = await page.locator("#det-panel label.prod input:checked").first.get_attribute(
             "value")
-        for i, tid in enumerate(ids):
+        for tid in ids:
             label = (await page.locator(
                 f'#det-panel label.prod:has(input[value="{tid}"])').first.inner_text()).strip()
             if tid != current:
@@ -442,8 +441,6 @@ async def showcase(page: Page, d: Driver, cast: Screencast) -> None:
                 await preview_ready(page)
                 current = tid
             await caption(page, f"{title}  ·  {label}")
-            if key == "siem" and i == 2:
-                cast.mark("gif:pack")
             await d.wait(1350)
     await caption(page, None)
 
@@ -465,7 +462,6 @@ async def console_take(page: Page, cast: Screencast, base: str, target: str) -> 
     await page.keyboard.type("0.2", delay=90)
     await d.wait(300)
     await d.click('label:has(input[name="allow_private"])', after=500)
-    cast.mark("gif:scan")
     await d.click('form[action="/scan"] button[type="submit"]', after=300)
     cast.mark("job")
     await page.wait_for_url(re.compile(r"/runs/"), timeout=120000)
@@ -479,7 +475,6 @@ async def console_take(page: Page, cast: Screencast, base: str, target: str) -> 
     await d.move(".identity", steps=18)
     await d.wait(900)
     await d.scroll_to("#drivers", ms=1300)
-    cast.mark("gif:drivers")
     await d.move("#drivers .driver-score", steps=18)
     await d.wait(700)
     await d.move("#drivers figure.graph", steps=26)
@@ -489,7 +484,6 @@ async def console_take(page: Page, cast: Screencast, base: str, target: str) -> 
     cast.mark("04")
     await d.scroll_to("#files", ms=1300)
     await d.click('#files summary:has-text("Scripts")', after=700)
-    cast.mark("gif:preview")
     await d.click('#files a.link-button:has-text("install.bat")', after=1700)
     await d.key("j", 1300)
     await d.key("j", 1300)
@@ -506,7 +500,6 @@ async def console_take(page: Page, cast: Screencast, base: str, target: str) -> 
     # 06 detections: pick files for YARA
     cast.mark("06")
     await d.scroll_to("#detections", ms=1300)
-    cast.mark("gif:yara")
     await d.click('label.pick:has-text("install.bat")', after=500)
     await d.click('label.pick:has-text("config.json")', after=1300)
     await d.scroll_to("#yara-out", offset=260, ms=1500)
@@ -536,7 +529,6 @@ async def console_take(page: Page, cast: Screencast, base: str, target: str) -> 
     cast.mark("08")
     await page.evaluate("window.scrollTo({top: 0, behavior: 'smooth'})")
     await d.wait(1000)
-    cast.mark("gif:report")
     await d.click("[data-report-open]", after=900)
     await d.click('label.choice:has-text("Markdown")', after=800)
     await d.click('label.choice:has-text("PDF")', after=700)
@@ -702,30 +694,6 @@ async def record(args, work: Path) -> None:
     run([ffmpeg, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(concat),
          "-c", "copy", "-movflags", "+faststart", str(mp4)])
 
-    print("[*] preview animation")
-    gif_clips = [("gif:scan", 2.4), ("gif:drivers", 2.4), ("gif:preview", 4.2),
-                 ("gif:yara", 2.6), ("gif:pack", 4.4), ("gif:report", 2.2)]
-    frames = work / "gif-frames"
-    if frames.exists():
-        shutil.rmtree(frames)
-    frames.mkdir()
-    n = 0
-    for mark, seconds in gif_clips:
-        clip = work / f"{mark.replace(':', '-')}.mp4"
-        start = cast2.marks[mark]
-        cut(cast2, start, start + seconds, clip, ffmpeg)
-        part = work / "gif-part"
-        if part.exists():
-            shutil.rmtree(part)
-        part.mkdir()
-        run([ffmpeg, "-y", "-loglevel", "error", "-i", str(clip), "-vf",
-             "fps=8,scale=760:-1:flags=lanczos", str(part / "p_%04d.png")])
-        for png in sorted(part.glob("*.png")):
-            png.rename(frames / f"f_{n:05d}.png")
-            n += 1
-    run([sys.executable, str(DOCS / "build-demo-gif.py"), str(frames), str(DOCS / "demo.gif"),
-         "125", "96"])
-
     marks = {"terminal": cast1.marks, "console": cast2.marks, "cli": cast3.marks,
              "clips": [c.name for c in order]}
     (work / "marks.json").write_text(json.dumps(marks, indent=2), encoding="utf-8")
@@ -734,7 +702,7 @@ async def record(args, work: Path) -> None:
 
 def main() -> None:
     print(BANNER)
-    parser = argparse.ArgumentParser(description="Record docs/demo.mp4 and docs/demo.gif.")
+    parser = argparse.ArgumentParser(description="Record docs/demo.mp4.")
     parser.add_argument("--ffmpeg", default=shutil.which("ffmpeg") or "ffmpeg")
     parser.add_argument("--console-port", type=int, default=8801)
     parser.add_argument("--target-port", type=int, default=8806)
