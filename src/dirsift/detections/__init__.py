@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 
 from ..extract import defang, defang_text, host_of
 from ..models import ScanResult
-from . import csvfeed, kql, sigma, splunk
+from . import csvfeed, elastic, kql, logscale, misp, qradar, rpz, secops, sigma, splunk, suricata
 from .blocklist import ASSUMES as LIST_ASSUMES
 from .blocklist import render_list, without_scheme
 from .collect import REASONS, SHAREABLE, collect
@@ -37,6 +37,7 @@ from .options import (
 )
 
 __all__ = [
+    "FAMILIES",
     "GROUPS",
     "PROFILES",
     "REASONS",
@@ -63,7 +64,7 @@ __all__ = [
     "zip_bytes",
 ]
 
-GROUPS = ("existing", "blocklist", "siem", "share")
+GROUPS = ("existing", "blocklist", "siem", "network", "share")
 
 
 @dataclass(frozen=True)
@@ -120,6 +121,17 @@ for _kind, _label in (
         )
     )
 
+for _key, (_label, _kinds, _element) in qradar.SETS.items():
+    _TARGETS.append(
+        Target(
+            f"qradar-set-{_key}", "siem", f"QRadar reference set, {_label}",
+            "IBM QRadar reference set, loaded with ReferenceDataUtil.sh",
+            "csv", "text/csv; charset=utf-8", _key != "hash", _kinds,
+            (f"a QRadar reference set of element type {_element}",),
+            (lambda key: lambda run, options: qradar.render_set(key, run, options))(_key),
+        )
+    )
+
 _TARGETS += [
     Target(
         "sigma", "siem", "Sigma", "Sigma rule collection, for any SIEM through sigma-cli",
@@ -135,6 +147,41 @@ _TARGETS += [
         "kql", TEXT, True, kql.KINDS, tuple(kql.ASSUMES), kql.render,
     ),
     Target(
+        "elastic-esql", "siem", "Elastic ES|QL", "Elastic Security hunting in Discover (ECS)",
+        "esql", TEXT, True, elastic.KINDS, tuple(elastic.ESQL_ASSUMES), elastic.render_esql,
+    ),
+    Target(
+        "elastic-rules", "siem", "Elastic detection rules",
+        "Elastic Security detection rule import (NDJSON, KQL, ECS)",
+        "ndjson", "application/x-ndjson", True, elastic.KINDS, tuple(elastic.RULE_ASSUMES),
+        elastic.render_rules,
+    ),
+    Target(
+        "secops-yaral", "siem", "Google SecOps YARA-L", "Google SecOps (Chronicle) rules over UDM",
+        "yaral", TEXT, True, secops.KINDS, tuple(secops.ASSUMES), secops.render,
+    ),
+    Target(
+        "qradar-aql", "siem", "IBM QRadar AQL", "IBM QRadar Advanced Search over events and flows",
+        "aql", TEXT, True, qradar.KINDS, tuple(qradar.ASSUMES), qradar.render_aql,
+    ),
+    Target(
+        "logscale-cql", "siem", "CrowdStrike LogScale CQL",
+        "CrowdStrike Falcon LogScale and Next-Gen SIEM",
+        "cql", TEXT, True, logscale.KINDS, tuple(logscale.ASSUMES), logscale.render,
+    ),
+    Target(
+        "suricata", "network", "Suricata rules", "Suricata IDS (IP rules also read in Snort 3)",
+        "rules", TEXT, True, suricata.KINDS, tuple(suricata.ASSUMES), suricata.render,
+    ),
+    Target(
+        "rpz", "network", "DNS RPZ zone", "Response policy zone for BIND, Unbound, Knot, PowerDNS",
+        "zone", TEXT, True, rpz.KINDS, tuple(rpz.ASSUMES), rpz.render,
+    ),
+    Target(
+        "misp", "share", "MISP event", "MISP event import (core format), your organisation only",
+        "json", "application/json", True, misp.KINDS, tuple(misp.ASSUMES), misp.render,
+    ),
+    Target(
         "csv", "share", "CSV (SOAR / TIP import)", "Generic CSV for SOAR and TIP list imports",
         "csv", "text/csv; charset=utf-8", True, csvfeed.KINDS, tuple(csvfeed.ASSUMES),
         csvfeed.render,
@@ -142,6 +189,15 @@ _TARGETS += [
 ]
 
 TARGETS: dict[str, Target] = {target.id: target for target in _TARGETS}
+
+#: How a report groups the live targets: one row per family, never one per file.
+FAMILIES = (
+    ("SIEM queries", ("splunk", "kql", "elastic-esql", "secops-yaral", "qradar-aql",
+                      "logscale-cql", *(f"qradar-set-{key}" for key in qradar.SETS))),
+    ("Rules and sharing", ("yara", "sigma", "elastic-rules", "stix", "misp", "csv")),
+    ("Block lists", tuple(t.id for t in _TARGETS if t.group == "blocklist")),
+    ("Network", ("suricata", "rpz")),
+)
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 

@@ -670,7 +670,7 @@ def detections_cmd(
         typer.Option("--pick", help="Files for the YARA target, by name. Repeat for more."),
     ] = None,
 ) -> None:
-    """Write detection content from a saved run: Sigma, SPL, KQL, block lists, CSV, STIX, YARA.
+    """Write detection content from a saved run: SIEM queries, rules, block lists, feeds.
 
     Everything is a file. Nothing is sent to any product, and nothing live is
     printed: the files carry live values, so they only go where -o points.

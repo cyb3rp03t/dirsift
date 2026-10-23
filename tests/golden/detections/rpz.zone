@@ -1,0 +1,16 @@
+; dirsift DNS response policy zone (NXDOMAIN)
+; dirsift run golden-run | author cyb3rp03t | TLP:AMBER
+; target hxxp://panel-gate[.]xyz/files/ | scan started 2026-10-01T09:00:00.000Z
+; Found in an open directory, not a verdict: hunt with it, decide yourself.
+; assumes a resolver with response policy zones (BIND, Unbound, Knot Resolver, PowerDNS Recursor); load the file as the zone and name the zone in the resolver configuration
+; live values, not defanged: import it, do not open it in a browser or paste it in a chat.
+
+$TTL 300
+@ IN SOA localhost. hostmaster.localhost. ( 2026100109 3600 600 86400 300 )
+@ IN NS localhost.
+c2.evil-update.top CNAME .
+*.c2.evil-update.top CNAME .
+cdn.panel-gate.xyz CNAME .
+*.cdn.panel-gate.xyz CNAME .
+panel-gate.xyz CNAME .
+*.panel-gate.xyz CNAME .

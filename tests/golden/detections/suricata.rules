@@ -1,0 +1,25 @@
+# dirsift Suricata rules
+# dirsift run golden-run | author cyb3rp03t | TLP:AMBER
+# target hxxp://panel-gate[.]xyz/files/ | scan started 2026-10-01T09:00:00.000Z
+# Found in an open directory, not a verdict: hunt with it, decide yourself.
+# assumes Suricata 7 or later with HOME_NET set; the alert ip rules also read in Snort 3
+# live values, not defanged: import it, do not open it in a browser or paste it in a chat.
+
+# addresses found in the directory
+alert ip $HOME_NET any -> 198.51.100.23 any (msg:"dirsift golden-run traffic to an address found in an open directory 198.51.100.23"; classtype:trojan-activity; sid:1434749; rev:1;)
+alert ip $HOME_NET any -> 203.0.113.9 any (msg:"dirsift golden-run traffic to an address found in an open directory 203.0.113.9"; classtype:trojan-activity; sid:1818961; rev:1;)
+alert ip $HOME_NET any -> 2001:db8::7 any (msg:"dirsift golden-run traffic to an address found in an open directory 2001:db8::7"; classtype:trojan-activity; sid:1404926; rev:1;)
+# domains found in the directory, and their subdomains
+alert dns $HOME_NET any -> any any (msg:"dirsift golden-run DNS query for a domain found in an open directory c2.evil-update.top"; dns.query; dotprefix; content:".c2.evil-update.top"; nocase; endswith; classtype:trojan-activity; sid:1142565; rev:1;)
+alert tls $HOME_NET any -> any any (msg:"dirsift golden-run TLS SNI for a domain found in an open directory c2.evil-update.top"; flow:established,to_server; tls.sni; dotprefix; content:".c2.evil-update.top"; nocase; endswith; classtype:trojan-activity; sid:1986261; rev:1;)
+alert http $HOME_NET any -> any any (msg:"dirsift golden-run HTTP host for a domain found in an open directory c2.evil-update.top"; flow:established,to_server; http.host; dotprefix; content:".c2.evil-update.top"; endswith; classtype:trojan-activity; sid:1274668; rev:1;)
+alert dns $HOME_NET any -> any any (msg:"dirsift golden-run DNS query for a domain found in an open directory cdn.panel-gate.xyz"; dns.query; dotprefix; content:".cdn.panel-gate.xyz"; nocase; endswith; classtype:trojan-activity; sid:1096034; rev:1;)
+alert tls $HOME_NET any -> any any (msg:"dirsift golden-run TLS SNI for a domain found in an open directory cdn.panel-gate.xyz"; flow:established,to_server; tls.sni; dotprefix; content:".cdn.panel-gate.xyz"; nocase; endswith; classtype:trojan-activity; sid:1043045; rev:1;)
+alert http $HOME_NET any -> any any (msg:"dirsift golden-run HTTP host for a domain found in an open directory cdn.panel-gate.xyz"; flow:established,to_server; http.host; dotprefix; content:".cdn.panel-gate.xyz"; endswith; classtype:trojan-activity; sid:1929280; rev:1;)
+alert dns $HOME_NET any -> any any (msg:"dirsift golden-run DNS query for a domain found in an open directory panel-gate.xyz"; dns.query; dotprefix; content:".panel-gate.xyz"; nocase; endswith; classtype:trojan-activity; sid:1049089; rev:1;)
+alert tls $HOME_NET any -> any any (msg:"dirsift golden-run TLS SNI for a domain found in an open directory panel-gate.xyz"; flow:established,to_server; tls.sni; dotprefix; content:".panel-gate.xyz"; nocase; endswith; classtype:trojan-activity; sid:1419313; rev:1;)
+alert http $HOME_NET any -> any any (msg:"dirsift golden-run HTTP host for a domain found in an open directory panel-gate.xyz"; flow:established,to_server; http.host; dotprefix; content:".panel-gate.xyz"; endswith; classtype:trojan-activity; sid:1734469; rev:1;)
+# URLs found in the directory, host and path
+alert http $HOME_NET any -> any any (msg:"dirsift golden-run HTTP request for a URL found in an open directory http://c2.evil-update.top/gate.php?id=1&k=*"; flow:established,to_server; http.host; content:"c2.evil-update.top"; bsize:18; http.uri.raw; content:"/gate.php?id=1&k=*"; startswith; classtype:trojan-activity; sid:1624003; rev:1;)
+alert http $HOME_NET any -> any any (msg:"dirsift golden-run HTTP request for a URL found in an open directory http://panel-gate.xyz/files/"; flow:established,to_server; http.host; content:"panel-gate.xyz"; bsize:14; http.uri.raw; content:"/files/"; startswith; classtype:trojan-activity; sid:1489320; rev:1;)
+alert http $HOME_NET any -> any any (msg:"dirsift golden-run HTTP request for a URL found in an open directory https://raw.githubusercontent.com/someone/tools/main/x.ps1"; flow:established,to_server; http.host; content:"raw.githubusercontent.com"; bsize:25; http.uri.raw; content:"/someone/tools/main/x.ps1"; startswith; classtype:trojan-activity; sid:1962209; rev:1;)

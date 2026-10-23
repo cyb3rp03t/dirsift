@@ -744,8 +744,8 @@ class _Builder:
         except ValueError:
             port = 443 if scheme == "https" else 80
         packs = self.pack_rows()
-        made = [p[0] for p in packs if not p[1].startswith(T.YARA_NOT_GENERATED)]
-        notmade = [p[0] for p in packs if p[1].startswith(T.YARA_NOT_GENERATED)]
+        made = [p[0] for p in packs if p[3]]
+        notmade = self.packs_not_made
         if made:
             pack_text = ", ".join(made) + (
                 ". " + T.FACTS_PACKS_NOT_MADE.format(packs=", ".join(notmade)) if notmade else "")
@@ -1216,31 +1216,42 @@ class _Builder:
         tlp = self.tlp if self.tlp in ("CLEAR", "GREEN", "AMBER", "RED") else "AMBER"
         info = detections.summary(self.detection_run(), Options(tlp=tlp))
         self.det_info = info
-        rows = []
-        lists = []
         label = {"ipv4": "IPv4", "ipv6": "IPv6", "domain": "domain", "url": "URL",
                  "sha256": "SHA256", "md5": "MD5", "email": "email"}
-        for t in info["targets"]:
-            if not t["live"]:
+        by_id = {t["id"]: t for t in info["targets"] if t["live"]}
+        rows = []
+        self.packs_not_made = []
+        # One row per family: the formats it writes, and each indicator type
+        # once, since every format reads the same filtered set.
+        for family, ids in detections.FAMILIES:
+            formats, carried, missing = [], {}, []
+            for target in (by_id[i] for i in ids if i in by_id):
+                if target["needs_pick"] and not target["count"]:
+                    missing.append(target["label"])
+                    continue
+                if not target["count"]:
+                    continue
+                formats.append(target["label"])
+                for kind, count in target["counts"].items():
+                    if count:
+                        carried[kind] = max(carried.get(kind, 0), count)
+            self.packs_not_made += missing
+            if not formats and not missing:
                 continue
-            if t["group"] == "blocklist":
-                if t["count"]:
-                    lists.append(t)
-                continue
-            if t["needs_pick"] and not t["count"]:
-                rows.append((t["label"], T.YARA_NOT_GENERATED, T.YARA_NO_PICK))
-                continue
-            if not t["count"]:
-                continue
-            carried = ", ".join(f"{label.get(k, k)} {v}" for k, v in t["counts"].items() if v)
-            rows.append((t["label"], code(t["filename"]), carried))
-        if lists:
-            more = f" and {len(lists) - 1} more" if len(lists) > 1 else ""
-            rows.append((f"{len(lists)} block lists", code(lists[0]["filename"]) + more,
-                         ", ".join(f"{label.get(k, k)} {v}" for t in lists
-                                   for k, v in t["counts"].items() if v)))
-        yara = [r for r in rows if r[1] == T.YARA_NOT_GENERATED]
-        rows = [r for r in rows if r[1] != T.YARA_NOT_GENERATED] + yara
+            # Labels like "QRadar reference set, domains" share one entry.
+            grouped: dict[str, list[str]] = {}
+            for name in formats:
+                head, _, tail = name.partition(", ")
+                grouped.setdefault(head, []).append(tail)
+            formats = [head + (f"s ({', '.join(tails)})" if any(tails) else "")
+                       for head, tails in grouped.items()]
+            shown = ", ".join(formats)
+            if missing:
+                note = f"{', '.join(missing)} {T.YARA_NOT_GENERATED}: {T.YARA_NO_PICK}"
+                shown = f"{shown}; {note}" if shown else note
+            order = [kind for kind in detections.SHAREABLE if kind in carried]
+            carries = ", ".join(f"{label.get(k, k)} {carried[k]}" for k in order) or "none"
+            rows.append((family, shown, carries, bool(formats)))
         self._packs = rows
         return rows
 
@@ -1259,15 +1270,16 @@ class _Builder:
         prows = [(p.strength, p.engine.capitalize() if p.engine != "fofa" else "FOFA",
                   code(defang_text(p.shown_query or p.query))) for p in picked]
         blocks: list = [Heading("10.1 Detections")]
-        made = [p for p in packs if p[1] != T.YARA_NOT_GENERATED]
+        made = [p for p in packs if p[3]]
+        table = [p[:3] for p in packs]
         if made:
             blocks.append(Para(T.DETECTIONS_LEAD.format(total=total, reasons=left_text)
                                if total else T.DETECTIONS_LEAD_NOTHING_LEFT_OUT))
-            blocks.append(_table(["Pack", "File", "Carries"], packs))
+            blocks.append(_table(["Family", "Formats", "Carries"], table))
         else:
             blocks.append(Para(T.DETECTIONS_NONE))
             if packs:
-                blocks.append(_table(["Pack", "File", "Carries"], packs))
+                blocks.append(_table(["Family", "Formats", "Carries"], table))
         if self.tlp == "AMBER+STRICT":
             blocks.append(Note(T.STRICT_WARNING))
         blocks.append(Heading("10.2 Pivot queries"))

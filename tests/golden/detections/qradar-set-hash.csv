@@ -1,0 +1,9 @@
+# dirsift QRadar reference set, file hashes
+# dirsift run golden-run | author cyb3rp03t | TLP:AMBER
+# target hxxp://panel-gate[.]xyz/files/ | scan started 2026-10-01T09:00:00.000Z
+# Found in an open directory, not a verdict: hunt with it, decide yourself.
+# assumes a reference set of element type ALNIC; load it with ./ReferenceDataUtil.sh load <set name> <this file>
+# live values, not defanged: import it, do not open it in a browser or paste it in a chat.
+data
+9f2c1b7d3e4a5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8
+0a1b2c3d4e5f60718293a4b5c6d7e8f9

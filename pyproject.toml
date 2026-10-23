@@ -39,6 +39,12 @@ dirsift = "dirsift.cli:app"
 
 [dependency-groups]
 dev = [
+    # Parses the RPZ zone file in the tests. ISC license; never imported by the tool.
+    "dnspython>=2.8,<3",
+    # Parses the Suricata rules in the tests. BSD; never imported by the tool.
+    "idstools>=0.6.5,<0.7",
+    # Loads the MISP event against its JSON schema in the tests. BSD; never imported by the tool.
+    "pymisp>=2.5,<3",
     "pypdf>=6.2,<7",
     "pypdfium2>=5,<6",
     "pytest>=9.1,<10",

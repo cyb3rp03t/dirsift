@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from pathlib import Path
 
@@ -276,3 +277,22 @@ def test_the_page_keeps_the_filter_without_the_script(client):
     assert reply.status_code == 200
     assert "<html" in reply.text
     assert 'value="domain"' in reply.text
+
+
+@needs_templates
+def test_the_network_group_has_a_name_and_its_own_formats(client):
+    page = client.get("/runs/golden-run/detections", params={"group": "network"})
+    assert page.status_code == 200
+    assert "IDS and DNS" in page.text
+    assert 'value="suricata"' in page.text and 'value="rpz"' in page.text
+    # Every group the panel offers carries a visible name.
+    assert not re.search(r'name="group" value="[a-z]+"[^>]*> </label>', page.text)
+
+
+@needs_templates
+@pytest.mark.parametrize(("target", "shown"), [("blocklist-ipv4", True),
+                                               ("qradar-set-ip", False), ("suricata", False)])
+def test_the_comment_style_select_is_only_for_firewall_lists(client, target, shown):
+    page = client.get("/runs/golden-run/detections", params={"target": target})
+    assert page.status_code == 200
+    assert ('id="det-profile"' in page.text) is shown

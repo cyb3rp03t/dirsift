@@ -89,11 +89,14 @@ next build with, without ever running a sample.
   keyed to the indicators that file carried rather than to its digest. The hash
   stays in meta as identity: a hash matches one build, the address inside it
   usually survives the next one.
-- **Writes detections for the tools you run.** Thirteen outputs from one saved
-  run: YARA, a STIX 2.1 bundle, a defanged indicator list, the hash list, block
-  lists for IPv4, IPv6, domains, URLs and SHA256, a Sigma rule collection,
-  Splunk SPL, KQL for Microsoft Defender XDR and Sentinel, and a CSV for SOAR
-  and TIP imports. Every one is a file; nothing is sent to any product.
+- **Writes detections for the tools you run.** Twenty five outputs from one
+  saved run: YARA, a STIX 2.1 bundle, a MISP event, a defanged indicator list,
+  the hash list, block lists for IPv4, IPv6, domains, URLs and SHA256, a Sigma
+  rule collection, Splunk SPL, KQL for Microsoft Defender XDR and Sentinel,
+  Elastic ES|QL and detection rules, Google SecOps YARA-L, IBM QRadar AQL and
+  reference sets, CrowdStrike LogScale CQL, Suricata rules, a DNS response
+  policy zone, and a CSV for SOAR and TIP imports. Every one is a file; nothing
+  is sent to any product.
 - **Says what went wrong, in words.** A run's notes carry the status the server
   gave and a sentence about what it usually means: whether the branch was
   dropped on purpose, whether to slow down, and whether the answer came from
@@ -417,8 +420,8 @@ second time, and an address found in two runs lands on the same object.
 ### Hunts and block lists
 
 `detections` writes the same indicators in the shapes other tools read. There
-are thirteen targets, and `--list` shows what each one would carry for a given
-run:
+are twenty five targets, and `--list` shows what each one would carry for a
+given run:
 
 | Target | Output | For |
 |---|---|---|
@@ -430,6 +433,15 @@ run:
 | `sigma` | Sigma rule collection | any SIEM through sigma-cli (firewall, DNS, proxy and process creation log sources) |
 | `splunk` | SPL searches | Splunk Enterprise and Enterprise Security, over the CIM data models |
 | `kql` | KQL queries | Microsoft Defender XDR advanced hunting and Microsoft Sentinel |
+| `elastic-esql` | ES&#124;QL queries | Elastic Security hunting over ECS fields, one query per field family |
+| `elastic-rules` | detection rules (NDJSON) | Elastic Security rule import: KQL custom query rules, imported disabled |
+| `secops-yaral` | YARA-L 2.0 rules | Google SecOps (Chronicle), over UDM fields |
+| `qradar-aql` | AQL searches | IBM QRadar Advanced Search over events, flows and payloads |
+| `qradar-set-ip`, `qradar-set-domain`, `qradar-set-url`, `qradar-set-hash` | reference set files | IBM QRadar reference sets, loaded with `ReferenceDataUtil.sh load` |
+| `logscale-cql` | CQL queries | CrowdStrike Falcon LogScale and Next-Gen SIEM |
+| `suricata` | IDS rules | Suricata (DNS, TLS SNI, HTTP host and URL, IP); the IP rules also read in Snort 3 |
+| `rpz` | response policy zone | BIND, Unbound, Knot Resolver and PowerDNS Recursor (NXDOMAIN for each domain and its subdomains) |
+| `misp` | MISP event (core format) | MISP event import, distribution limited to your organisation |
 | `csv` | CSV | SOAR and TIP list imports |
 
 Every file says which log source it assumes, carries the TLP label you pick
@@ -437,6 +449,15 @@ Every file says which log source it assumes, carries the TLP label you pick
 only: nothing is sent to any product. `--type` and `--source` narrow it to some
 indicator types or one file, and `--profile` sets the comment style of the block
 lists (`generic`, `paloalto` or `bare`).
+
+Some languages have no documented way to write a character a value may hold:
+a single quote in AQL, a value with both quote kinds in YARA-L, a comma in a
+QRadar reference set, a character a zone file reads as syntax. Such a value is
+left out of that one file, and the file says how many were. Suricata rules take
+sids from the local range 1000000 to 1999999, derived from the indicator, so
+the same indicator keeps its sid from run to run. The PDF and Markdown reports
+list the formats by family (SIEM queries, rules and sharing, block lists,
+network) rather than file by file.
 
 One filter runs before every format, and the files and the console count what it
 left out and why: private, reserved, multicast and documentation addresses,
