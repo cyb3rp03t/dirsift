@@ -159,6 +159,14 @@ second.
 
 ## Install
 
+> [!IMPORTANT]
+> **Run it in an isolated environment.** DirSift points at servers that hand out
+> malware, and the console shows what they serve. Use an isolated analysis
+> machine: a VM with a snapshot, no shared folders, no route to your own
+> network, and a proxy or VPN in front so the target does not see your address
+> (`--proxy`). It is built to work there with no internet beyond the target:
+> fonts and scripts are embedded and the address table is a local file.
+
 Needs Python 3.11 or newer. With [uv](https://github.com/astral-sh/uv):
 
 ```bash
