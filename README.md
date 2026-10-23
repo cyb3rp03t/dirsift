@@ -71,6 +71,9 @@ next build with, without ever running a sample.
 - **Guesses the entry point.** The file that names the other files, contains
   command-shaped strings and sits at the top of the tree is ranked first, with
   the reasons shown. It is a candidate, not a verdict.
+- **Guesses what the box is for.** Distribution server, panel, data drop,
+  phishing kit or toolkit, each as a candidate with a score, the reasons and the
+  files behind it, from the names and kinds it already has.
 - **Extracts indicators.** Addresses, URLs, domains, credential shapes, mutexes,
   registry keys and paths, each with the line it came from, deduped across
   defanged and live spellings, and defanged on the way out. Each one carries a
@@ -352,6 +355,35 @@ saved anywhere.
 
 The PDF is a closed document: no links, no scripts, no forms, no embedded files.
 The same run and assessment give the same bytes every time.
+
+### What kind of box is this
+
+An attacker's host does one of a few jobs, and the next step depends on which.
+The report (section 2.1) and the terminal summary lead with a guess:
+
+| Role | What it means |
+|---|---|
+| `distribution` | Hands out the payload: a loader, a run of builds, the script that ties them together |
+| `panel` | The operator's panel or gate: login, gate, config and the folders a panel keeps |
+| `drop` | Where stolen data lands: stealer logs, folders named after victims, dumps |
+| `phishing` | A phishing kit, or what it wrote: a cloned page, its form handler, its results |
+| `toolkit` | What the operator carries: tunnels, credential dumpers, scanners |
+
+Each role gets a score, the reasons that set it and the files behind them. With
+no role at 50 or above the answer is unclear, and two close roles are reported
+as mixed. It is worked out from file and folder names, the kinds the classifier
+gave them and the indicators already extracted. No request is made for it and
+no file is read again. The STIX export names the same roles as infrastructure
+types.
+
+Tool names are cheap. A file called `mimikatz.exe` is a file someone named
+that; check the bytes before believing it.
+
+When a directory reads like a drop, the report opens with a warning: it may
+hold other people's stolen data. DirSift read only the head of each file and
+changes nothing about what it does, but decide how to handle that data under
+your organisation's rules before pulling more, and treat the saved run JSON
+with the same care.
 
 ### How sure is it
 

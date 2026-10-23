@@ -40,6 +40,7 @@ from .extract import SecretMask, defang, defang_text, refang
 from .glue import GlueCandidate
 from .models import Ioc, Kind, ScanResult
 from .pivots import build_pivots
+from .role import describe_lead
 
 KIND_LABEL = {
     Kind.PE: "Windows executables", Kind.ELF: "ELF binaries", Kind.MACHO: "Mach-O binaries",
@@ -79,6 +80,10 @@ KEY_EXTS = frozenset({"pem", "key", "pfx", "p12", "jks", "ppk"})
 EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 MOST_USEFUL = 10
 TOP_CANDIDATES = 6
+
+#: Files shown beside each candidate role; the run keeps up to eight.
+ROLE_FILES_SHOWN = 5
+
 NETWORK_TYPES = ("url", "domain", "ipv4", "ipv6")
 LEFT_OUT_OF_MOST_USEFUL = frozenset({
     T.NOTE_FILE_PATH, T.NOTE_BASE, "private or reserved address", "public resolver",
@@ -709,6 +714,9 @@ class _Builder:
         self.summary_words = len(re.findall(r"\S+", text))
         sec = Section("summary", "1", "Executive summary", "O")
         sec.blocks = [Summary(text, T.SUMMARY_CLOSING)]
+        if r.role is not None and r.role.victim_data_warning:
+            # Before anything else the reader sees: what this data may be.
+            sec.blocks.insert(0, Note(T.VICTIM_DATA_WARNING))
         return sec
 
     def ceiling(self) -> str:
@@ -776,6 +784,8 @@ class _Builder:
             ("Scanned", code(iso(r.started_at)) + " to " + code(iso(r.finished_at))),
             ("Last listed by DirSift", (code(iso(last.finished_at)) if listed
                                         else T.NOT_RECORDED) + " (note 2)"),
+            ("Candidate role", T.FACTS_ROLE.format(lead=describe_lead(r.role))
+             if r.role is not None else T.NOT_RECORDED),
             ("Top entry point candidate",
              T.FACTS_TOP.format(name=code(self.rel(top.entry.url)), score=f"{top.score:.1f}")
              if top else "none"),
@@ -800,7 +810,33 @@ class _Builder:
         sec = Section("facts", "2", "Key facts", "O")
         sec.blocks = [_table(["Fact", "Value"], rows, kind="kv", keep=True),
                       Note(note1 + " " + note2 + ".")]
+        sec.blocks += self.role_blocks()
         return sec
+
+    def role_blocks(self) -> list:
+        """What kind of box this is: every candidate role, its reasons and files."""
+        role = self.r.role
+        if role is None:
+            return []
+        if role.lead == "unclear" or not role.candidates:
+            return [Heading(T.ROLE_HEADING), Para(T.ROLE_UNCLEAR)]
+        rows = [
+            (
+                c.role,
+                str(c.score),
+                "; ".join(c.reasons),
+                ", ".join(code(path) for path in c.evidence[:ROLE_FILES_SHOWN]) or "none",
+            )
+            for c in role.candidates
+        ]
+        # The table sits straight under its heading: a heading only holds on to
+        # the block right after it, so a paragraph between them would let the
+        # table move to the next page alone.
+        return [
+            Heading(T.ROLE_HEADING),
+            _table(T.ROLE_HEADERS, rows, aligns=["l", "r", "l", "l"]),
+            Note(T.ROLE_SOURCE),
+        ]
 
     def s_assessment(self) -> Section:
         a = self.assessment

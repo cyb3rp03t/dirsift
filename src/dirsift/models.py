@@ -162,6 +162,24 @@ class ScanError(BaseModel):
     at: datetime = Field(default_factory=_utcnow)
 
 
+class RoleCandidate(BaseModel):
+    """One job the directory may be doing, and what in the run suggests it."""
+
+    role: str  # distribution, panel, drop, phishing, toolkit
+    score: int = 0
+    reasons: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)  # paths under the root
+
+
+class HostRole(BaseModel):
+    """What kind of box this probably is. A candidate, not a verdict."""
+
+    lead: str = "unclear"  # a role, "mixed" or "unclear"
+    candidates: list[RoleCandidate] = Field(default_factory=list)
+    # The directory may hold other people's stolen data.
+    victim_data_warning: bool = False
+
+
 class ScanResult(BaseModel):
     """Everything one run of DirSift learned about one open directory."""
 
@@ -193,6 +211,9 @@ class ScanResult(BaseModel):
     requests_made: int = 0
     bytes_fetched: int = 0
     options: dict[str, Any] = Field(default_factory=dict)
+
+    # Set by the role pass. Absent from runs saved before it existed.
+    role: HostRole | None = None
 
     @property
     def files(self) -> list[Entry]:

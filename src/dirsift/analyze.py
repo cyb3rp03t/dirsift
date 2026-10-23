@@ -16,6 +16,7 @@ from .confidence import score_iocs
 from .extract import dedupe_iocs, extract_iocs, host_of
 from .glue import GlueCandidate, apply_glue, score_glue
 from .models import ScanResult
+from .role import guess_role
 
 
 def _address_of(value: str) -> str:
@@ -128,4 +129,6 @@ def analyze(
 
     place_in_networks(result, asn_table if asn_table is not None else default_table())
     score_iocs(result, candidates)
+    # Last, because it reads the scores the confidence pass just wrote.
+    result.role = guess_role(result, candidates)
     return result, candidates

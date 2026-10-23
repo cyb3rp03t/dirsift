@@ -222,9 +222,9 @@
       "created": "2026-10-01T09:00:00.000Z",
       "modified": "2026-10-01T09:00:00.000Z",
       "name": "panel-gate.xyz/files/",
-      "description": "Open directory index (nginx) served by nginx, listing 4 files, walked by dirsift on 2026-10-01. dirsift records what was served and makes no judgement about it.",
+      "description": "Open directory index (nginx) served by nginx, listing 4 files, walked by dirsift on 2026-10-01. dirsift records what was served and makes no judgement about it. Candidate role: unclear.",
       "infrastructure_types": [
-        "hosting-malware"
+        "unknown"
       ],
       "first_seen": "2026-10-01T09:00:00.000Z",
       "last_seen": "2026-10-01T09:00:00.000Z",

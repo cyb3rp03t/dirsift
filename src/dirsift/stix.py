@@ -28,8 +28,9 @@ from urllib.parse import unquote, urlparse
 
 from .classify import mismatch
 from .extract import SecretPieces, host_of
-from .models import Entry, Ioc, Kind, ScanResult
+from .models import Entry, Ioc, ScanResult
 from .pivots import internal_address
+from .role import LIMITS, STIX_TYPES, guess_role
 
 #: The namespace STIX 2.1 fixes for observable identifiers.
 SCO_NAMESPACE = uuid.UUID("00abedb4-aa42-466c-9c01-fed23315a9b7")
@@ -100,7 +101,6 @@ def pattern_string(value: str) -> str:
 # The bundle
 
 #: File kinds that make a directory a host for something that runs.
-RUNNABLE = {Kind.PE, Kind.ELF, Kind.MACHO, Kind.SCRIPT}
 
 #: Indicator types that become observables, and the observable each becomes.
 #: Credentials, wallets, mutexes and paths stay out: a secret in particular
@@ -181,9 +181,21 @@ def _ip_version(value: str) -> int | None:
         return None
 
 
-def _infrastructure(build: _Builder) -> str:
-    """The directory itself, described and not judged."""
+def _infrastructure(build: _Builder, candidates) -> str:
+    """The directory itself, described and not judged.
+
+    Its types are the roles the run supports at a score worth naming, in
+    STIX's own words; with none, the type is unknown. The description names the
+    leading role and its strongest reasons, as candidates rather than findings.
+    """
     result = build.result
+    role = result.role or guess_role(result, candidates)
+    strong = [c for c in role.candidates if c.score >= LIMITS["lead"]]
+    types = list(dict.fromkeys(STIX_TYPES[c.role] for c in strong)) or ["unknown"]
+    reasons = role.candidates[0].reasons[:3] if role.candidates else []
+    candidate_note = f" Candidate role: {role.lead}" + (
+        f" ({'; '.join(reasons)})." if reasons and role.lead != "unclear" else "."
+    )
     parsed = urlparse(result.root_url)
     files = len(result.files)
     title = f', titled "{result.title}"' if result.title else ""
@@ -193,14 +205,13 @@ def _infrastructure(build: _Builder) -> str:
         f"{files} file{'s' if files != 1 else ''}, walked by dirsift on "
         f"{build.when[:10]}. dirsift records what was served "
         "and makes no judgement about it."
-    )
-    runnable = any(entry.kind in RUNNABLE for entry in result.files)
+    ) + candidate_note
     return build.domain_object(
         "infrastructure",
         "target",
         name=parsed.netloc + (parsed.path or "/"),
         description=description,
-        infrastructure_types=["hosting-malware" if runnable else "unknown"],
+        infrastructure_types=types,
         first_seen=build.when,
         last_seen=timestamp(result.finished_at or result.started_at),
     )
@@ -493,7 +504,7 @@ def build_bundle(
     as ``dirsift stix`` writes it.
     """
     build = _Builder(result, only)
-    infrastructure = _infrastructure(build)
+    infrastructure = _infrastructure(build, candidates)
     _target(build, infrastructure)
     files = _files(build, infrastructure)
     _indicators(build, infrastructure, files)

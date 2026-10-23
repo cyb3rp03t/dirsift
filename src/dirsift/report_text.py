@@ -130,6 +130,20 @@ SUMMARY_CLOSING = (
 
 # Section 2
 FACTS_TOP = "{name}, {score} of 100, a candidate, not a conclusion"
+FACTS_ROLE = "{lead}, a candidate, not a conclusion (2.1, below)"
+ROLE_HEADING = "2.1 Host role, a candidate, not a verdict"
+ROLE_SOURCE = (
+    "What kind of box this is, drawn from file and folder names, the kinds DirSift gave "
+    "them and the indicators already extracted. No request was made for it."
+)
+ROLE_UNCLEAR = "Unclear: nothing in this run points to one job more than another."
+ROLE_HEADERS = ("Role", "Score", "Reasons", "Files")
+VICTIM_DATA_WARNING = (
+    "This directory may hold other people's stolen data. DirSift read only the head of "
+    "each file. Before pulling any more, make a plan under your organisation's rules for "
+    "handling such data, and give the saved run JSON the same care: it carries pieces of "
+    "that data too."
+)
 FACTS_NO_SIZE = "Not advertised by the server. DirSift read {size} across {files} files."
 FACTS_HASHED = (
     "{hashed} files read whole; {cut} cut at the {ceiling} ceiling; {unread} not read "

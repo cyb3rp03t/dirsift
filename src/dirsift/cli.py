@@ -45,6 +45,7 @@ from .report_model import (
     sibling_runs,
 )
 from .report_pdf import render_pdf
+from .role import describe_lead
 from .rules import build_rules
 from .stix import build_bundle, bundle_json, left_out
 from .walker import ScanOptions, scan
@@ -107,7 +108,14 @@ def _summary(result: ScanResult, candidates) -> None:
         total = sum(e.size or e.fetched_bytes or 0 for e in entries)
         sample = ", ".join(e.name for e in entries[:3])
         table.add_row(str(kind), str(len(entries)), human_size(total) if total else "-", sample)
+    if result.role is not None:
+        table.add_row("role", "", "", describe_lead(result.role), style="bold")
     console.print(table)
+    if result.role is not None and result.role.victim_data_warning:
+        console.print(
+            "[yellow]This directory may hold other people's stolen data. Only the head of "
+            "each file was read; plan before pulling more, and treat the run JSON the same.[/]"
+        )
     console.print()
 
     if result.target_ip:
