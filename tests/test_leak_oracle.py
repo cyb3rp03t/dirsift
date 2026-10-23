@@ -91,7 +91,19 @@ URL_PASSWORDS = {
     "dquote": 'p"assW0rdLong',
     "space": "pass W0rdLong9",
     "digits": "12345/W0rdLong8",
+    # Written with no scheme at all: user:password@host.
+    "bare_config": "Sch3me.LessPw",
+    "bare_json": "JsonDsnPassw0rd",
+    "bare_shell": "CurlUserPw88",
+    "bare_conn": "NoSchemePw77",
 }
+#: Credentials with no scheme, in the places a kit writes them.
+HOST_CREDENTIAL_LINES = [
+    f"db_target = svc:{URL_PASSWORDS['bare_config']}@198.51.100.90:5432/app",
+    f'{{"dsn": "app:{URL_PASSWORDS["bare_json"]}@db.example.com:3306/shop"}}',
+    f"curl -u deploy:{URL_PASSWORDS['bare_shell']}@203.0.113.91 -T loot.tar",
+    f"conn user:{URL_PASSWORDS['bare_conn']}@db.example.net",
+]
 URL_CREDENTIALS = [
     f"ftp://backup:{URL_PASSWORDS['ftp']}@203.0.113.10/",
     f"https://admin:{URL_PASSWORDS['https']}@panel.example.com/panel",
@@ -160,6 +172,7 @@ FILES = {
     # Bracketed hosts that are no address at all: a run holding them must still
     # be analysed, saved and reopened.
     "brackets.txt": "\n".join(BROKEN_BRACKETS) + "\n",
+    "bare.txt": "\n".join(HOST_CREDENTIAL_LINES) + "\n",
 }
 
 
@@ -565,3 +578,15 @@ def test_a_run_with_broken_bracketed_hosts_saves_and_reopens(tmp_path: Path, cli
     assert client.get(f"/runs/{RUN}").status_code == 200
     shown = client.get(f"/runs/{RUN}/file", params={"url": ROOT + "brackets.txt"})
     assert shown.status_code == 200
+
+
+def test_every_credential_without_a_scheme_is_a_named_secret():
+    result = leak_result()
+    found = [ioc for ioc in secret_iocs(result) if ioc.label == "host_credentials"]
+    assert len(found) == len(HOST_CREDENTIAL_LINES)
+    for ioc in found:
+        assert SHOWN.match(secret_shown(ioc)), secret_shown(ioc)
+    values = {ioc.value for ioc in result.iocs}
+    # The hosts stay indicators in their own right (example domains are noise).
+    assert {"198.51.100.90:5432", "203.0.113.91"} <= values
+    assert not [ioc for ioc in result.iocs if ioc.ioc_type == "email" and "Pw" in ioc.value]

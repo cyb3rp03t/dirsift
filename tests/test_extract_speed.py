@@ -36,6 +36,9 @@ CASES = {
     "links": lambda size: fill("http://198.51.100.2/a ", size),
     "percent signs": lambda size: fill("http://%zz:%zz@%zz/", size),
     "one link with a long path": lambda size: "http://u:pw@198.51.100.1/" + fill("a/@", size),
+    "credentials without a scheme": lambda size: fill("-u user:NoSchemePw77@db.example.net ", size),
+    "labels before emails": lambda size: fill("Name:jane@example.org a:b@c ", size),
+    "a long chain after a bare login": lambda size: "a:b@" + fill("x.", size) + "com",
 }
 
 

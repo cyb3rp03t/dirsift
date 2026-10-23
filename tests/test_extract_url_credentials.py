@@ -243,7 +243,9 @@ def test_a_link_with_no_scheme_is_still_a_secret():
     ],
 )
 def test_a_port_or_a_path_is_not_taken_for_a_password(text):
-    assert secrets(text) == []
+    # Only the link is asked about: ``user:bob@example.net`` after it reads as
+    # a login with no scheme, which tests/test_extract_host_credentials.py owns.
+    assert [ioc for ioc in secrets(text) if ioc.label == "url_credentials"] == []
 
 
 # A password the strict pattern cannot hold (a double quote, a space) is still

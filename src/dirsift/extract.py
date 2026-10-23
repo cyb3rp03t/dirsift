@@ -213,14 +213,15 @@ _BRACKETED = r"\[[0-9a-f.]*:[0-9a-f:.]*\](?::\d{1,5})?(?=[/?#\s\"'<>)\],;`|\\{}^
 _URL = re.compile(
     r"\bhttps?://(?:" + _BRACKETED + r"[^\s\"'<>()\[\]{}\\|^`]*|[^\s\"'<>()\[\]{}\\|^`]+)", re.I
 )
-_DOMAIN = re.compile(
-    r"(?<![\w.@-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+#: A domain name on the suffix list, wherever it stands.
+_DOMAIN_NAME = (
+    r"((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
     r"(?:com|net|org|io|ru|cn|top|xyz|info|biz|online|site|shop|club|icu|cc|su|pw|"
     r"gq|tk|ml|cf|ga|live|app|dev|cloud|space|fun|store|work|link|host|press|"
     r"duckdns\.org|ddns\.net|no-ip\.org|hopto\.org|serveo\.net|ngrok\.io|"
-    r"trycloudflare\.com|onion))(?![\w-])",
-    re.I,
+    r"trycloudflare\.com|onion))(?![\w-])"
 )
+_DOMAIN = re.compile(r"(?<![\w.@-])" + _DOMAIN_NAME, re.I)
 #: Where a scheme, or a bare ``//`` for a protocol relative link, opens a link.
 _LINK_OPENING = r"(?:\b(?P<scheme>[a-z][a-z0-9+.-]{1,31}):|(?<![\w:/]))//"
 #: ``host:8080/`` after the ``//`` is a port, not a password.
@@ -354,6 +355,113 @@ def _credentials_at(value: str) -> re.Match[str] | None:
         if match and _is_credentials(match):
             return match
     return None
+
+
+#: ``user:password@host`` with no scheme in front of it, as a shell ``-u``, a
+#: connection string or a config value writes it. The user starts where a word
+#: starts, not inside a path, an address or a word joined by a dot, a plus or
+#: a percent sign; it may carry a ``DOMAIN\`` in front and letters of any
+#: script. The password follows the colon with no space (``Name: jane@...``
+#: is a label and an email); it may hold a slash, a colon or a backslash, and
+#: no @, quote or angle bracket. The host is an IPv4 address, a bracketed IPv6
+#: address or a domain on the suffix list, then an optional port and path.
+#: ``_is_host_credentials`` weighs the rest.
+_HOST_CREDENTIALS = re.compile(
+    r"(?<![\w.%+:@/\\])"
+    r"(?P<userinfo>(?P<user>(?:[^\W_][\w-]{0,14}\\)?[^\W_][\w.%+-]{0,127})"
+    # A colon and two slashes open a link, whose own patterns read it.
+    r":(?!//)(?P<password>[^\s@\"'<>]{1,256}))@"
+    r"(?P<host>\[[0-9a-f.]*:[0-9a-f:.]*\]|(?:\d{1,3}\.){3}\d{1,3}(?![\d.])|" + _DOMAIN_NAME + r")"
+    r"(?P<port>:\d{1,5})?(?![\w@-]|[.:]\w)"
+    r"(?:/[^\s\"'<>`]*)?",
+    re.I,
+)
+#: A value that reads as the name of a mailbox, not as a password: a lower
+#: case letter, then lower case letters and ``. _ + -``, then at most four
+#: digits. ``drop``, ``jane.doe``, ``noreply``, ``abc123``.
+_MAILBOX_NAME = re.compile(r"[a-z][a-z._+-]*\d{0,6}")
+#: A user that names an address and cannot be a login: a scheme for one
+#: (``mailto:``, ``sip:``, ``tel:``), or a field or header name for one
+#: (``send_to``, ``Resent-From``, ``admin_email``, ``rcpt``, ``X-Sender``).
+#: After one of these the email counts, whatever its local part looks like.
+_ADDRESS_LABEL = re.compile(
+    r"^(?:mailto|sips?|tel|xmpp|im)$|^x-"
+    r"|(?:-to|-from|_to|_from|email|mail|address|addr|recipient|receiver|sender|rcpt)$",
+    re.I,
+)
+#: A name in two or more parts, any case: letters only, split by ``.``, ``-``
+#: or ``_``, then at most four digits. ``Jane.Doe``, ``J.Smith``,
+#: ``Mary-Ann.Lee``. One capitalised word (``Summer``) is no such name.
+_PARTED_NAME = re.compile(r"[^\W\d_]+(?:[._-][^\W\d_]+)+\d{0,4}")
+#: A phone number as the name of a mailbox: ``tel:+15550100@...``.
+_PHONE_MAILBOX = re.compile(r"\+?[\d-]{6,20}")
+
+
+def _reads_as_mailbox(password: str) -> bool:
+    """Whether the email the text would give at this @ names a mailbox.
+
+    That email starts after the last colon, slash or backslash of the value
+    and after any markup in front of it (``**Email:**jane@``), so that part is
+    weighed: ``jdbc:mysql:jane@...`` holds the mailbox ``jane``.
+    """
+    tail = re.split(r"[:/\\]", password)[-1].lstrip("*_~`")
+    return bool(
+        _MAILBOX_NAME.fullmatch(tail)
+        or _PARTED_NAME.fullmatch(tail)
+        or _PHONE_MAILBOX.fullmatch(tail)
+    )
+#: A scheme link, or a protocol relative one, as one token: the credentials in
+#: it belong to the link patterns. Only a login that is a query value of its
+#: own (``?c=user:password@host``) is read inside one.
+_LINK_TOKEN = re.compile(r"(?:\b[a-z][a-z0-9+.-]{1,31}:)?//[^\s\"'<>]*", re.I)
+#: Hex digits and colons: a piece of an IPv6 address such as ``fe80::1``.
+_HEX_PIECE = re.compile(r"[0-9a-f]{0,4}(?::[0-9a-f]{0,4}){0,7}", re.I)
+
+
+def _is_host_credentials(match: re.Match[str]) -> bool:
+    """Whether a schemeless ``user:password@host`` is a login.
+
+    The rule, in order:
+
+    * The user needs a letter, so a time (``12:30@host``) or a ratio is no
+      login.
+    * A user and a password of hex digits and colons are a piece of an IPv6
+      address (``fe80::1@``, ``dead:beef@``).
+    * A one letter user before a slash or a backslash is a drive (``C:\\x``).
+    * The host must be real: an address or a domain on the suffix list.
+    * With a domain for a host, ``password@host`` is also an email. When the
+      part of the value the email would start with reads as a mailbox name
+      (``_reads_as_mailbox``), it is the email that counts, whatever stands
+      before the colon: a header or field name (``Delivered-To:``,
+      ``send_to:``, ``smtp.user:``) or a user. So ``send_to:drop@...`` keeps
+      its email, and so do weak logins such as ``root:toor@...`` or
+      ``admin:admin123@...``. After a user that names an address
+      (``_ADDRESS_LABEL``: ``mailto:``, ``rcpt:``, ``X-Sender:``) the email
+      counts whatever the value. Any other value stays a secret:
+      ``conf.admin:Dot99Passw@...``, ``id:a1b2c3@...``.
+    * With an address for a host there is no email to keep, so it is a login.
+    """
+    user, password = match.group("user"), match.group("password")
+    if not re.search(r"[^\W\d_]", user):
+        return False
+    if _HEX_PIECE.fullmatch(user) and _HEX_PIECE.fullmatch(password):
+        return False
+    if len(user) == 1 and password.startswith(("/", "\\")):
+        return False
+    host = match.group("host")
+    if not _real_host(host):
+        return False
+    if _DOMAIN.fullmatch(host.lower()) and (
+        _ADDRESS_LABEL.search(user) or _reads_as_mailbox(password)
+    ):
+        return False
+    return True
+
+
+def _host_credentials_at(value: str) -> re.Match[str] | None:
+    """How a host_credentials value reads."""
+    match = _HOST_CREDENTIALS.match(value)
+    return match if match and _is_host_credentials(match) else None
 
 
 def host_of(url: str) -> str:
@@ -571,7 +679,22 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
     # Where a password sits inside a link. Only the url_credentials secret may
     # cover it; any other indicator touching it would quote the password.
     credentials = _credentials_in(working)
-    userinfo_spans = _Spans([match.span("userinfo") for match, _ in credentials])
+    # The same with no scheme, outside any link: ``-u user:password@host``.
+    link_tokens = _Spans([match.span() for match in _LINK_TOKEN.finditer(working)])
+    host_credentials = [
+        match
+        for match in _HOST_CREDENTIALS.finditer(working)
+        if _is_host_credentials(match)
+        and (
+            not link_tokens.overlaps(*match.span())
+            or working[match.start() - 1 : match.start()] in ("=", "&")
+        )
+    ]
+    host_credential_spans = _Spans([match.span() for match in host_credentials])
+    userinfo_spans = _Spans(
+        [match.span("userinfo") for match, _ in credentials]
+        + [match.span("userinfo") for match in host_credentials]
+    )
     credential_spans = _Spans([(match.start(), end) for match, end in credentials])
     # Where each line starts and ends, found once: a long line is not copied
     # again for every indicator on it, and each line is judged a comment once.
@@ -633,7 +756,9 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
             # a file path just makes it wrong.
             defanged=(
                 defang(value)
-                if ioc_type in NETWORK_TYPES or _is_link(value) or label == "url_credentials"
+                if ioc_type in NETWORK_TYPES
+                or _is_link(value)
+                or label in ("url_credentials", "host_credentials")
                 else value
             ),
             source_url=source_url,
@@ -664,6 +789,13 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
             url = _without_userinfo(link)
             if host_of(url) not in ("", *_NOISE_DOMAINS):
                 add("url", url, match.start("host"), link_end)
+
+    for match in host_credentials:
+        add("secret", match.group(0), *match.span(), label="host_credentials")
+        name = match.group("host").lower()
+        if _DOMAIN.fullmatch(name) and not name.endswith(tuple(_NOISE_DOMAINS)):
+            # Right after an @ the domain pattern sees an email; here it is a host.
+            add("domain", name, *match.span("host"))
 
     for match in _URL.finditer(working):
         if credential_spans.holds(match.start()):
@@ -718,6 +850,15 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
     for match in _CREDENTIAL_PAIR.finditer(working):
         secret = match.group("secret")
         if secret.lower() in _NOISE_SECRET_VALUES or secret.isdigit():
+            continue
+        if host_credential_spans.overlaps(*match.span()):
+            # A whole line of user:password@host is named once, with its host.
+            continue
+        local, at, domain = secret.partition("@")
+        named = _ADDRESS_LABEL.search(match.group("user")) or _reads_as_mailbox(local)
+        if at and named and _DOMAIN.fullmatch(domain.lower()):
+            # ``send_to:drop@example.org`` is a field and an email, the same
+            # reading as for user:password@host: the email is the indicator.
             continue
         add("secret", match.group(0).strip(), *match.span(), label="credential_pair")
 
@@ -777,11 +918,12 @@ def secret_material(ioc: Ioc) -> str:
     every key shares. Anything else is secret whole.
     """
     value = ioc.value
-    if ioc.label == "url_credentials":
+    if ioc.label in ("url_credentials", "host_credentials"):
         # The user and the password; the scheme and the host are public. The
         # password stands on its own line as well, so one too short to cut
         # into pieces is still blocked wherever it is written whole.
-        match = _credentials_at(value.strip())
+        reader = _credentials_at if ioc.label == "url_credentials" else _host_credentials_at
+        match = reader(value.strip())
         if not match:
             return value
         password = match.group("password").strip()
@@ -879,6 +1021,10 @@ def _secret_opening(ioc: Ioc) -> str:
         scheme = match.group("scheme")
         opening = f"{scheme.lower()}://" if scheme else "//"
         return defang(f"{opening}{match.group('host').lower()}/")
+    if ioc.label == "host_credentials":
+        # The host alone, never the user and the password in front of it.
+        match = _host_credentials_at(value)
+        return defang(match.group("host").lower()) if match else ""
     if _is_link(value):
         try:
             parsed = urlparse(value)
