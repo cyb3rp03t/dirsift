@@ -74,10 +74,12 @@ next build with, without ever running a sample.
   registry keys and paths, each with the line it came from, deduped across
   defanged and live spellings, and defanged on the way out. Each one carries a
   confidence from 0 to 100 that it is a live part of the kit, with the reasons.
-- **Names secrets without quoting them.** A key block, a cloud or chat token, or
-  a value assigned to a name such as `password` is shown by its kind, its fixed
-  opening (a PEM `BEGIN` line, `AKIA`), its length and the start of its sha256.
-  Two runs holding the same secret can be matched; neither one repeats it.
+- **Names secrets without quoting them.** A key block, a cloud or chat token, a
+  value assigned to a name such as `password`, a login inside a link
+  (`ftp://user:pass@host`) or one written bare (`user:pass@host`) is shown by its
+  kind, its fixed opening (a PEM `BEGIN` line, `AKIA`, the link's host), its
+  length and the start of its sha256. Two runs holding the same secret can be
+  matched; neither one repeats it.
 - **Hashes what it read whole.** sha256 and md5 for every file that fitted under
   the peek ceiling, in the listing, in the report and in `hashes.txt`. A file cut
   at the ceiling gets no hash and says so, because half a file hashes to nothing
@@ -466,10 +468,15 @@ the hash of an empty file. A host many people share, such as GitHub or an S3
 bucket, enters as a full URL only, never as a host to block. The scanned server
 itself is labeled as the target. Wallets, mutexes and paths stay in YARA only.
 A secret DirSift recognizes (a key block, a cloud or chat token, a value assigned
-to a name such as `password` or `aws_secret_access_key`) enters no file at all,
-YARA included, and the indicator list, the report and the run page name it by
-kind, length and the start of its sha256 instead of quoting it. A secret it does
-not recognize is text like any other.
+to a name such as `password` or `aws_secret_access_key`, a login inside a link or
+written bare as `user:pass@host`) enters no file at all, YARA included, and the
+indicator list, the report and the run page name it by kind, length and the
+start of its sha256 instead of quoting it. The host of a login stays an
+indicator, and a link keeps its address with the login removed. When
+`name:value@domain` reads as a mail field rather than a login (`mailto:`,
+`sender:`, a header ending in `-To`, or a mailbox-like name such as
+`noreply@`), the email is kept and nothing is hidden. A secret it does not
+recognize is text like any other.
 
 The files carry live values, so `-o` is required and nothing is printed. In the
 console the preview is defanged; copy and download give the live file.
@@ -552,7 +559,7 @@ full binary and never executes anything.
 
 ```bash
 uv sync
-uv run pytest -q       # 900+ tests
+uv run pytest -q       # 1300+ tests
 uv run ruff check .
 ```
 
@@ -563,7 +570,11 @@ attacker's filename, a path separator, a line ending off an IIS box.
 
 The tests that matter most are in `tests/test_rules.py`: they stand up a local
 server and assert that only GET is ever sent, that a 401 ends the walk, that no
-path is invented, and that the delay cannot be dialed to zero.
+path is invented, and that the delay cannot be dialed to zero. Next to them,
+`tests/test_leak_oracle.py` builds a run full of secrets, logins in links and
+bare logins, and checks every exit (each detection file, the zip, the Markdown
+report, the console pages and the command line) for any piece of them, raw or
+defanged.
 
 ## Disclaimer
 
