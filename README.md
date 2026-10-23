@@ -627,6 +627,16 @@ whether you are allowed to look at something, you are not sure.
 Samples belong in a VM, never in a repository. `.gitignore` reflects that from
 the first commit.
 
+## About the author
+
+**Alp Cihangir Aslan** (cyb3rp03t) is a Senior Threat Intelligence Analyst who
+hunts attacker infrastructure: C2 servers, staging hosts and the kits left open
+on them. DirSift is the tool he wanted for the first hour of that work, built to
+stay inside the lines a researcher can defend.
+
+[GitHub](https://github.com/cyb3rp03t) ·
+[LinkedIn](https://www.linkedin.com/in/alpcihangiraslan/)
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
