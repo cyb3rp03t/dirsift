@@ -71,13 +71,28 @@ CARDS = [
      "Files grouped by what their first bytes say. Read each head, step with j and k."),
     ("05", "Indicators",
      "Pulled from the file heads, defanged, filtered by kind."),
-    ("06", "Detections",
-     "A YARA rule from the files you pick, and a rule pack for the tools you run."),
-    ("07", "Report",
+    ("06", "YARA from your picks",
+     "Tick the files; each rule keys on what that file carried, not on its hash."),
+    ("07", "Rule packs: twenty five formats",
+     "SIEM hunts, block lists, IDS and DNS, sharing. One saved run, every tool you run."),
+    ("08", "Report",
      "PDF or Markdown, with the TLP label you choose for each download."),
-    ("08", "The CLI, offline",
+    ("09", "The CLI, offline",
      "detections, stix and report read the saved run and send nothing."),
 ]
+
+#: The rule pack chapter walks the families in the console's order. The caption
+#: names the family and the format on screen; the console itself is unchanged.
+SHOWCASE = [
+    ("siem", "SIEM hunts"),
+    ("blocklist", "Block lists"),
+    ("network", "IDS and DNS"),
+    ("share", "Sharing"),
+    ("existing", "Run exports"),
+]
+#: Within a family, the hunts most analysts run come first.
+SHOWCASE_FIRST = ["splunk", "kql", "elastic-esql", "elastic-rules", "secops-yaral",
+                  "qradar-aql", "logscale-cql", "sigma"]
 
 BANNER = r"""
  ____  _      ____  _  __ _
@@ -359,6 +374,80 @@ class Driver:
         await self.wait(after)
 
 
+async def caption(page: Page, text: str | None) -> None:
+    """A recording-only caption at the foot of the frame; None removes it."""
+    await page.evaluate(
+        """(text) => {
+             let el = document.getElementById("demo-caption");
+             if (!text) { if (el) el.remove(); return; }
+             if (!el) {
+               el = document.createElement("div");
+               el.id = "demo-caption";
+               el.style.cssText = "position:fixed;left:50%;bottom:28px;" +
+                 "transform:translateX(-50%);z-index:9999;padding:10px 18px;" +
+                 "border-radius:10px;font:600 17px/1.2 " +
+                 "'JetBrains Mono',monospace;letter-spacing:.02em;color:var(--ink);" +
+                 "background:var(--surface-2);border:1px solid var(--lamp);" +
+                 "box-shadow:0 8px 28px rgba(0,0,0,.45);pointer-events:none";
+               document.body.appendChild(el);
+             }
+             el.textContent = text;
+           }""",
+        text,
+    )
+
+
+async def preview_ready(page: Page) -> None:
+    """Wait until the rule pack panel has swapped and its preview has loaded."""
+    try:
+        await page.wait_for_function(
+            """() => { const p = document.querySelector('#det-panel');
+                 const b = p && p.querySelector('.rule-body');
+                 return b && !p.classList.contains('htmx-request')
+                          && !b.querySelector('p.empty'); }""",
+            timeout=6000,
+        )
+    except Exception:
+        # A format with nothing to carry keeps its placeholder; move on.
+        pass
+    await page.wait_for_timeout(250)
+
+
+async def showcase(page: Page, d: Driver, cast: Screencast) -> None:
+    """Every family, every format, each with its preview on screen."""
+    for key, title in SHOWCASE:
+        group = f'#det-panel label.dgroup:has(input[value="{key}"])'
+        if not await page.locator(group).count():
+            continue
+        await d.move(group)
+        await caption(page, title)
+        await d.click(group, after=300)
+        await preview_ready(page)
+        # Once per family: the format chips near the top, the file under them.
+        # Just below the sticky bar, so the clicks that follow need no scroll.
+        await d.scroll_to("#det-panel .tgt-nav", offset=165, ms=800)
+        ids = await page.locator("#det-panel label.prod input").evaluate_all(
+            "els => els.map(e => e.value)")
+        ids.sort(key=lambda tid: (SHOWCASE_FIRST.index(tid) if tid in SHOWCASE_FIRST
+                                  else len(SHOWCASE_FIRST)))
+        current = await page.locator("#det-panel label.prod input:checked").first.get_attribute(
+            "value")
+        for i, tid in enumerate(ids):
+            label = (await page.locator(
+                f'#det-panel label.prod:has(input[value="{tid}"])').first.inner_text()).strip()
+            if tid != current:
+                await d.move(f'#det-panel label.prod:has(input[value="{tid}"])')
+                await caption(page, f"{title}  ·  {label}")
+                await d.click(f'#det-panel label.prod:has(input[value="{tid}"])', after=200)
+                await preview_ready(page)
+                current = tid
+            await caption(page, f"{title}  ·  {label}")
+            if key == "siem" and i == 2:
+                cast.mark("gif:pack")
+            await d.wait(1350)
+    await caption(page, None)
+
+
 async def console_take(page: Page, cast: Screencast, base: str, target: str) -> None:
     d = Driver(page)
     await page.goto(base + "/", wait_until="networkidle")
@@ -414,25 +503,37 @@ async def console_take(page: Page, cast: Screencast, base: str, target: str) -> 
     await d.click('[data-facets] button:has-text("secret")', after=1200)
     await d.click('[data-facets] button:has-text("all")', after=900)
 
-    # 06 detections: pick files for YARA, then a rule pack
+    # 06 detections: pick files for YARA
     cast.mark("06")
     await d.scroll_to("#detections", ms=1300)
     cast.mark("gif:yara")
     await d.click('label.pick:has-text("install.bat")', after=500)
     await d.click('label.pick:has-text("config.json")', after=1300)
     await d.scroll_to("#yara-out", offset=260, ms=1500)
-    await d.wait(400)
-    await d.scroll_to("#det-panel", offset=170, ms=1300)
-    # Documentation addresses count as reserved, so let them in first: until
-    # then the ipv4 box has nothing to carry and stays disabled.
-    await d.click('#det-panel label.inline:has-text("leave out private")', after=1200)
-    await d.click('#det-panel label.facet:has-text("ipv4")', after=1200)
-    await d.click('#det-panel label.dgroup:has-text("Block lists")', after=500)
-    await d.scroll_by(260, ms=1000)
     await d.wait(900)
 
-    # 07 the report window: PDF or Markdown, and the TLP
+    # 07 the rule pack: every family and every format
     cast.mark("07")
+    await d.scroll_to("#det-panel", offset=170, ms=1300)
+    await caption(page, "Rule packs  ·  let the demo's documentation addresses in")
+    # Documentation addresses count as reserved, so let them in first: until
+    # then most formats have nothing to carry from this demo folder.
+    await d.click('#det-panel label.inline:has-text("leave out private")', after=300)
+    await preview_ready(page)
+    # The kinds that were disabled a moment ago were not sent with the form, so
+    # they come back unticked: tick every kind this run carries.
+    for kind in ("ipv4", "ipv6", "domain", "url", "email"):
+        box = page.locator(f'#det-panel label.facet input[value="{kind}"]')
+        if await box.count() and await box.is_enabled() and not await box.is_checked():
+            await d.click(f'#det-panel label.facet:has(input[value="{kind}"])', after=250)
+            await preview_ready(page)
+    await showcase(page, d, cast)
+    await d.move("#det-panel [data-zip]")
+    await d.ring("#det-panel [data-zip]")
+    await d.wait(1100)
+
+    # 08 the report window: PDF or Markdown, and the TLP
+    cast.mark("08")
     await page.evaluate("window.scrollTo({top: 0, behavior: 'smooth'})")
     await d.wait(1000)
     cast.mark("gif:report")
@@ -588,10 +689,10 @@ async def record(args, work: Path) -> None:
     piece(cast2, "job", "job-done", "console-02-walk", speed=1.6)
     piece(cast2, "job-done", "03", "console-02-done")
     for i, (a, b) in enumerate([("03", "04"), ("04", "05"), ("05", "06"), ("06", "07"),
-                                ("07", "end")], start=2):
+                                ("07", "08"), ("08", "end")], start=2):
         card(f"card{i}")
         piece(cast2, a, b, f"console-{a}")
-    card("card7")
+    card("card8")
     piece(cast3, "start", "end", "terminal-cli")
     card("outro", 2.0)
 
@@ -603,7 +704,7 @@ async def record(args, work: Path) -> None:
 
     print("[*] preview animation")
     gif_clips = [("gif:scan", 2.4), ("gif:drivers", 2.4), ("gif:preview", 4.2),
-                 ("gif:yara", 2.6), ("gif:report", 2.2)]
+                 ("gif:yara", 2.6), ("gif:pack", 4.4), ("gif:report", 2.2)]
     frames = work / "gif-frames"
     if frames.exists():
         shutil.rmtree(frames)

@@ -28,7 +28,7 @@ It does not decide anything for you. It collects.
                    by cyb3rp03t
 ```
 
-![A scan, the case file it produces, a file opened in the preview window, and the report window](docs/demo.gif)
+![A scan, the case file it produces, a file opened in the preview window, a rule pack, and the report window](docs/demo.gif)
 
 **[Watch the full walkthrough](docs/demo.mp4)** (MP4). In order:
 
@@ -37,9 +37,10 @@ It does not decide anything for you. It collects.
 3. The case file: identity and likely drivers
 4. The inventory and the preview window
 5. Indicators
-6. Detections
-7. The report window: PDF or Markdown
-8. The same work from the command line
+6. YARA from the files you pick
+7. Rule packs: every family and every format, from SIEM hunts to IDS and DNS
+8. The report window: PDF or Markdown
+9. The same work from the command line
 
 ## Where it earns its keep: C2 servers
 
@@ -91,14 +92,15 @@ next build with, without ever running a sample.
   keyed to the indicators that file carried rather than to its digest. The hash
   stays in meta as identity: a hash matches one build, the address inside it
   usually survives the next one.
-- **Writes detections for the tools you run.** Twenty five outputs from one
-  saved run: YARA, a STIX 2.1 bundle, a MISP event, a defanged indicator list,
-  the hash list, block lists for IPv4, IPv6, domains, URLs and SHA256, a Sigma
-  rule collection, Splunk SPL, KQL for Microsoft Defender XDR and Sentinel,
-  Elastic ES|QL and detection rules, Google SecOps YARA-L, IBM QRadar AQL and
-  reference sets, CrowdStrike LogScale CQL, Suricata rules, a DNS response
-  policy zone, and a CSV for SOAR and TIP imports. Every one is a file; nothing
-  is sent to any product.
+- **Writes detections for the tools you run.** **Twenty five outputs** from one
+  saved run: **YARA**, a **STIX 2.1** bundle, a **MISP** event, a defanged
+  **indicator list**, the **hash list**, **block lists** for IPv4, IPv6,
+  domains, URLs and SHA256, a **Sigma** rule collection, **Splunk SPL**, **KQL**
+  for Microsoft Defender XDR and Sentinel, **Elastic ES|QL** and detection
+  rules, **Google SecOps YARA-L**, **IBM QRadar AQL** and reference sets,
+  **CrowdStrike LogScale CQL**, **Suricata** rules, a **DNS response policy
+  zone**, and a **CSV** for SOAR and TIP imports. Every one is a file;
+  **nothing is sent to any product.**
 - **Says what went wrong, in words.** A run's notes carry the status the server
   gave and a sentence about what it usually means: whether the branch was
   dropped on purpose, whether to slow down, and whether the answer came from
