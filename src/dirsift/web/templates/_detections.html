@@ -2,8 +2,8 @@
     control redraws this panel (htmx); without the script the Show button sends
     the same form. Which product card is open is part of the form (target), so a
     redraw keeps it. Previews are defanged; copy and download fetch the live file. -#}
-{% set group_names = {"existing": "Run exports", "blocklist": "Block lists", "siem": "SIEM hunts", "share": "SOAR / sharing"} %}
-{% set group_order = ["siem", "blocklist", "share", "existing"] %}
+{% set group_names = {"existing": "Run exports", "blocklist": "Block lists", "siem": "SIEM hunts", "network": "IDS and DNS", "share": "SOAR / sharing"} %}
+{% set group_order = ["siem", "blocklist", "network", "share", "existing"] %}
 {% set pack = targets | rejectattr("id", "equalto", "yara") | list %}
 {% set asked_group = request.query_params.get("group") %}
 {% set asked_target = request.query_params.get("target") %}
@@ -61,7 +61,7 @@
           <option{% if options.tlp == level %} selected{% endif %}>{{ level }}</option>
           {% endfor %}
         </select>
-        {% if chosen and chosen.group == "blocklist" %}
+        {% if chosen and chosen.id.startswith("blocklist-") %}
         <label class="fb-l" for="det-profile">comments</label>
         <select id="det-profile" name="profile" class="src-sel is-short">
           {% for profile, said in [("generic", "# header lines"), ("paloalto", "Palo Alto style"), ("bare", "none")] %}

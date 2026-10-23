@@ -1,0 +1,10 @@
+# dirsift QRadar reference set, URLs
+# dirsift run golden-run | author cyb3rp03t | TLP:AMBER
+# target hxxp://panel-gate[.]xyz/files/ | scan started 2026-10-01T09:00:00.000Z
+# Found in an open directory, not a verdict: hunt with it, decide yourself.
+# assumes a reference set of element type ALN; load it with ./ReferenceDataUtil.sh load <set name> <this file>
+# live values, not defanged: import it, do not open it in a browser or paste it in a chat.
+data
+http://c2.evil-update.top/gate.php?id=1&k=*
+http://panel-gate.xyz/files/
+https://raw.githubusercontent.com/someone/tools/main/x.ps1

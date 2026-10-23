@@ -334,6 +334,8 @@ def test_the_tlp_label_is_in_every_output(target_id, tlp):
         assert f'"tlp": "{colour}"' in text
     elif target_id == "sigma":
         assert f"tlp.{tlp.lower()}" in text
+    elif target_id == "misp":
+        assert f'"name": "tlp:{tlp.lower()}"' in text
     else:
         assert f"TLP:{tlp}" in text
 

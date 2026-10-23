@@ -1,0 +1,179 @@
+{
+  "Event": {
+    "uuid": "182b1a7e-1424-4540-b565-82a280370cfe",
+    "info": "dirsift run golden-run: indicators from an open directory. Found in an open directory, not a verdict: hunt with it, decide yourself.",
+    "date": "2026-10-01",
+    "timestamp": "1790845200",
+    "publish_timestamp": "0",
+    "published": false,
+    "threat_level_id": "4",
+    "analysis": "0",
+    "distribution": "0",
+    "sharing_group_id": "0",
+    "Tag": [
+      {
+        "name": "tlp:amber",
+        "colour": "#FFC000",
+        "exportable": true
+      }
+    ],
+    "Attribute": [
+      {
+        "uuid": "fe386b01-cc3e-43cb-bd47-436f7f5bf1fe",
+        "type": "ip-dst",
+        "category": "Network activity",
+        "value": "198.51.100.23",
+        "to_ids": true,
+        "comment": "the directory's own host; dirsift run golden-run",
+        "distribution": "5",
+        "sharing_group_id": "0",
+        "timestamp": "1790845200",
+        "deleted": false,
+        "disable_correlation": false
+      },
+      {
+        "uuid": "275d975c-ecec-433b-8c8d-1f53a4524f12",
+        "type": "ip-dst",
+        "category": "Network activity",
+        "value": "203.0.113.9",
+        "to_ids": true,
+        "comment": "found in loader.sh; dirsift run golden-run",
+        "distribution": "5",
+        "sharing_group_id": "0",
+        "timestamp": "1790845200",
+        "deleted": false,
+        "disable_correlation": false
+      },
+      {
+        "uuid": "584a7ee4-6b8c-4d5b-902d-c723cee581a8",
+        "type": "ip-dst",
+        "category": "Network activity",
+        "value": "2001:db8::7",
+        "to_ids": true,
+        "comment": "found in notes.txt; partial read; dirsift run golden-run",
+        "distribution": "5",
+        "sharing_group_id": "0",
+        "timestamp": "1790845200",
+        "deleted": false,
+        "disable_correlation": false
+      },
+      {
+        "uuid": "a4c01406-a194-4535-97c2-5ad2d5c6b5f9",
+        "type": "domain",
+        "category": "Network activity",
+        "value": "c2.evil-update.top",
+        "to_ids": true,
+        "comment": "found in loader.sh; dirsift run golden-run",
+        "distribution": "5",
+        "sharing_group_id": "0",
+        "timestamp": "1790845200",
+        "deleted": false,
+        "disable_correlation": false
+      },
+      {
+        "uuid": "f70ff650-7df4-4530-83ff-2e4ecedca2a7",
+        "type": "domain",
+        "category": "Network activity",
+        "value": "cdn.panel-gate.xyz",
+        "to_ids": true,
+        "comment": "found in loader.sh; dirsift run golden-run",
+        "distribution": "5",
+        "sharing_group_id": "0",
+        "timestamp": "1790845200",
+        "deleted": false,
+        "disable_correlation": false
+      },
+      {
+        "uuid": "fe4e7684-3932-4973-ae14-8be492a14d90",
+        "type": "domain",
+        "category": "Network activity",
+        "value": "panel-gate.xyz",
+        "to_ids": true,
+        "comment": "the directory's own host; dirsift run golden-run",
+        "distribution": "5",
+        "sharing_group_id": "0",
+        "timestamp": "1790845200",
+        "deleted": false,
+        "disable_correlation": false
+      },
+      {
+        "uuid": "c8134d01-21f5-42bc-a944-45f20b1a5d55",
+        "type": "url",
+        "category": "Network activity",
+        "value": "http://c2.evil-update.top/gate.php?id=1&k=*",
+        "to_ids": true,
+        "comment": "found in loader.sh; dirsift run golden-run",
+        "distribution": "5",
+        "sharing_group_id": "0",
+        "timestamp": "1790845200",
+        "deleted": false,
+        "disable_correlation": false
+      },
+      {
+        "uuid": "b334dcd3-9910-4b9f-bd9a-534f64c61a25",
+        "type": "url",
+        "category": "Network activity",
+        "value": "http://panel-gate.xyz/files/",
+        "to_ids": true,
+        "comment": "the directory's own host; dirsift run golden-run",
+        "distribution": "5",
+        "sharing_group_id": "0",
+        "timestamp": "1790845200",
+        "deleted": false,
+        "disable_correlation": false
+      },
+      {
+        "uuid": "28f16b66-21bd-4620-b7e0-ae3f8ce561af",
+        "type": "url",
+        "category": "Network activity",
+        "value": "https://raw.githubusercontent.com/someone/tools/main/x.ps1",
+        "to_ids": true,
+        "comment": "found in notes.txt; partial read; dirsift run golden-run",
+        "distribution": "5",
+        "sharing_group_id": "0",
+        "timestamp": "1790845200",
+        "deleted": false,
+        "disable_correlation": false
+      },
+      {
+        "uuid": "4b250787-59a8-4271-bb98-181c098f0b62",
+        "type": "email-src",
+        "category": "Payload delivery",
+        "value": "ops@evil-update.top",
+        "to_ids": false,
+        "comment": "found in loader.sh; dirsift run golden-run",
+        "distribution": "5",
+        "sharing_group_id": "0",
+        "timestamp": "1790845200",
+        "deleted": false,
+        "disable_correlation": false
+      },
+      {
+        "uuid": "e0152b3f-e733-407c-83fb-d958852edaad",
+        "type": "sha256",
+        "category": "Payload delivery",
+        "value": "9f2c1b7d3e4a5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8",
+        "to_ids": true,
+        "comment": "found in loader.sh; dirsift run golden-run",
+        "distribution": "5",
+        "sharing_group_id": "0",
+        "timestamp": "1790845200",
+        "deleted": false,
+        "disable_correlation": false
+      },
+      {
+        "uuid": "83032c3d-78dc-45b6-9653-22bbdd97a833",
+        "type": "md5",
+        "category": "Payload delivery",
+        "value": "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+        "to_ids": true,
+        "comment": "found in loader.sh; dirsift run golden-run",
+        "distribution": "5",
+        "sharing_group_id": "0",
+        "timestamp": "1790845200",
+        "deleted": false,
+        "disable_correlation": false
+      }
+    ]
+  }
+}
