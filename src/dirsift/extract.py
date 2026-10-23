@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import re
+from bisect import bisect_left, bisect_right
 from urllib.parse import urlparse
 
 from .models import Ioc
@@ -60,6 +61,11 @@ def spelling_pattern(value: str) -> re.Pattern[str]:
     YARA matches bytes, so a rule needs the form the file used. Each piece of
     the value that has defanged forms accepts the live form or any of them.
     """
+    return re.compile("".join(_spelling_parts(value)), re.I)
+
+
+def _spelling_parts(value: str) -> list[str]:
+    """The pattern of ``spelling_pattern``, one part per character of the value."""
     parts: list[str] = []
     index = 0
     while index < len(value):
@@ -73,7 +79,51 @@ def spelling_pattern(value: str) -> re.Pattern[str]:
         else:
             parts.append(re.escape(char))
         index += 1
-    return re.compile("".join(parts), re.I)
+    return parts
+
+
+#: A value longer than this is looked for piece by piece: one pattern of a
+#: quarter of a million parts takes seconds to compile.
+_LONG_VALUE = 512
+#: How many parts one piece holds.
+_PIECE_PARTS = 256
+
+
+def _search_in_pieces(text: str, parts: list[str]) -> str | None:
+    """What a pattern built from ``parts`` matches first in a text, or None.
+
+    The same answer as compiling the parts into one pattern. The forms of one
+    character each start with a different character, so a part reads a text
+    one way only, and a piece is cut only before a plain character that is no
+    whitespace: the piece before it cannot give back anything the next one
+    could use. A match is then the first piece found and each later piece
+    matched where the one before it ended. Later pieces are compiled only
+    when a match gets to them.
+    """
+    sources: list[str] = []
+    current: list[str] = []
+    for part in parts:
+        plain = not part.startswith("(?:") and not part.lstrip("\\").isspace()
+        if len(current) >= _PIECE_PARTS and plain:
+            sources.append("".join(current))
+            current = []
+        current.append(part)
+    sources.append("".join(current))
+    pieces: list[re.Pattern[str]] = [re.compile(sources[0], re.I)]
+    position = 0
+    while found := pieces[0].search(text, position):
+        end = found.end()
+        for index in range(1, len(sources)):
+            if index == len(pieces):
+                pieces.append(re.compile(sources[index], re.I))
+            following = pieces[index].match(text, end)
+            if following is None:
+                break
+            end = following.end()
+        else:
+            return text[found.start() : end]
+        position = found.start() + 1
+    return None
 
 
 def spelling_in(text: str, value: str) -> str:
@@ -83,6 +133,12 @@ def spelling_in(text: str, value: str) -> str:
     When nothing matches, the live value stands in.
     """
     if value in text:
+        return value
+    if len(value) > _LONG_VALUE:
+        for parts in ([re.escape(char) for char in value], _spelling_parts(value)):
+            spelled = _search_in_pieces(text, parts)
+            if spelled is not None:
+                return spelled
         return value
     for pattern in (re.compile(re.escape(value), re.I), spelling_pattern(value)):
         match = pattern.search(text)
@@ -240,6 +296,34 @@ def _is_credentials(match: re.Match[str]) -> bool:
     return _real_host(match.group("host"))
 
 
+class _Spans:
+    """Stretches of a text, asked whether a range or a position falls in one.
+
+    Sorted and merged once, then each question is a binary search, so a line
+    holding thousands of links is not scanned again for every indicator on it.
+    """
+
+    def __init__(self, spans: list[tuple[int, int]]) -> None:
+        merged: list[list[int]] = []
+        for start, end in sorted(span for span in spans if span[0] < span[1]):
+            if merged and start < merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+        self.starts = [start for start, _ in merged]
+        self.ends = [end for _, end in merged]
+
+    def overlaps(self, start: int, end: int) -> bool:
+        """Whether ``start`` to ``end`` shares any character with a stretch."""
+        index = bisect_left(self.starts, end) - 1
+        return index >= 0 and start < self.ends[index]
+
+    def holds(self, position: int) -> bool:
+        """Whether a position lies inside a stretch."""
+        index = bisect_right(self.starts, position) - 1
+        return index >= 0 and position < self.ends[index]
+
+
 def _credentials_in(text: str) -> list[tuple[re.Match[str], int]]:
     """Every link with a password in a text and where each one ends.
 
@@ -256,9 +340,9 @@ def _credentials_in(text: str) -> list[tuple[re.Match[str], int]]:
             position = found[-1][1]
         else:
             position = match.start("password")
-    taken = [(match.start(), end) for match, end in found]
+    taken = _Spans([(match.start(), end) for match, end in found])
     for match in _URL_CREDENTIALS_LOOSE.finditer(text):
-        if not any(match.start() < end and start < match.end() for start, end in taken):
+        if not taken.overlaps(match.start(), match.end()):
             found.append((match, match.end()))
     return sorted(found, key=lambda item: item[0].start())
 
@@ -438,13 +522,6 @@ def _assignments(text: str) -> list[re.Match[str]]:
 COMMENT_PREFIXES = ("#", "//", ";", "rem ", "::", "<!--", "/*", "*")
 
 
-def _line_at(text: str, start: int) -> str:
-    """The line a match starts on, without its line ending, whichever one it was."""
-    line_start = text.rfind("\n", 0, start) + 1
-    line_end = text.find("\n", start)
-    return text[line_start : line_end if line_end != -1 else len(text)].rstrip("\r")
-
-
 def is_comment(line: str) -> bool:
     """Whether a line is a comment rather than something the kit runs or reads.
 
@@ -484,18 +561,6 @@ def _is_interesting_ip(raw: str) -> bool:
     )
 
 
-def _context(text: str, start: int, end: int, width: int = 90) -> str:
-    line_start = text.rfind("\n", 0, start) + 1
-    line_end = text.find("\n", end)
-    line = text[line_start : line_end if line_end != -1 else len(text)]
-    line = line.strip()
-    if len(line) <= width:
-        return line
-    offset = start - line_start
-    left = max(0, offset - width // 2)
-    return ("..." if left else "") + line[left : left + width].strip() + "..."
-
-
 def extract_iocs(text: str, source_url: str) -> list[Ioc]:
     """Lift indicators out of one file's text. Deduped within the file."""
     if not text:
@@ -506,11 +571,35 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
     # Where a password sits inside a link. Only the url_credentials secret may
     # cover it; any other indicator touching it would quote the password.
     credentials = _credentials_in(working)
-    userinfo_spans = [match.span("userinfo") for match, _ in credentials]
-    credential_spans = [(match.start(), end) for match, end in credentials]
+    userinfo_spans = _Spans([match.span("userinfo") for match, _ in credentials])
+    credential_spans = _Spans([(match.start(), end) for match, end in credentials])
+    # Where each line starts and ends, found once: a long line is not copied
+    # again for every indicator on it, and each line is judged a comment once.
+    newlines = [match.start() for match in re.finditer("\n", working)]
+    comment_lines: dict[int, bool] = {}
 
-    def in_userinfo(start: int, end: int) -> bool:
-        return any(start < span_end and span_start < end for span_start, span_end in userinfo_spans)
+    def line_bounds(index: int) -> tuple[int, int]:
+        start = newlines[index - 1] + 1 if index else 0
+        end = newlines[index] if index < len(newlines) else len(working)
+        return start, end
+
+    def comment_at(position: int) -> bool:
+        index = bisect_left(newlines, position)
+        if index not in comment_lines:
+            start, end = line_bounds(index)
+            comment_lines[index] = is_comment(working[start:end].rstrip("\r"))
+        return comment_lines[index]
+
+    def context_at(start: int, end: int, width: int = 90) -> str:
+        # The line around a match, cut to a window centred on it when long.
+        line_start = line_bounds(bisect_left(newlines, start))[0]
+        line_end = line_bounds(bisect_left(newlines, end))[1]
+        line = working[line_start:line_end].strip()
+        if len(line) <= width:
+            return line
+        offset = start - line_start
+        left = max(0, offset - width // 2)
+        return ("..." if left else "") + line[left : left + width].strip() + "..."
 
     def add(ioc_type: str, value: str, start: int, end: int, label: str | None = None) -> None:
         value = value.rstrip(".,;:)\"'")
@@ -521,11 +610,11 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
             end = start + value.find(chr(10))
         if not value:
             return
-        if ioc_type != "secret" and in_userinfo(start, end):
+        if ioc_type != "secret" and userinfo_spans.overlaps(start, end):
             return
         if ioc_type == "url" and not _readable_link(value):
             return
-        comment = is_comment(_line_at(working, start))
+        comment = comment_at(start)
         existing = found.get((ioc_type, value.lower()))
         if existing is not None:
             # The first mention keeps its context; later ones are only counted,
@@ -549,7 +638,7 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
             ),
             source_url=source_url,
             sources=[source_url],
-            context=defang_text(_context(working, start, end)),
+            context=defang_text(context_at(start, end)),
             label=label,
             in_comment=comment,
             spellings={source_url: spelling},
@@ -577,7 +666,7 @@ def extract_iocs(text: str, source_url: str) -> list[Ioc]:
                 add("url", url, match.start("host"), link_end)
 
     for match in _URL.finditer(working):
-        if any(start <= match.start() < end for start, end in credential_spans):
+        if credential_spans.holds(match.start()):
             continue
         url = _without_userinfo(match.group(0))
         host = host_of(url)
