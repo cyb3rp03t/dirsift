@@ -1,6 +1,6 @@
 <div class="card card-tight">
-  <p class="quiet" style="margin: 0 0 var(--space-2)">Hash</p>
-  <p class="data" style="margin: 0 0 var(--space-3); overflow-wrap: anywhere">{{ digest }}</p>
+  <p class="quiet flush-top gap-below-2">Hash</p>
+  <p class="data flush-top gap-below-3">{{ digest }}</p>
 
   {% if note %}
   <div class="notice is-warn">
@@ -21,7 +21,7 @@
     <li class="chip is-warn">not seen by the scanner</li>
     {% endif %}
   </ul>
-  <p class="quiet" style="margin: var(--space-3) 0 0">
+  <p class="quiet gap-above-3 flush-bottom">
     {% if verdict.found and verdict.malicious %}
     Engines disagree often, and a count is not a verdict on its own. Open the
     report before calling it.

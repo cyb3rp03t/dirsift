@@ -127,7 +127,7 @@ def test_a_saved_run_is_all_these_commands_touch(tmp_path: Path):
     assert json.loads(run.read_text(encoding="utf-8")) == before
 
 
-# -- placing an address, from a table already on the machine ---------------
+# Placing an address, from a table already on the machine
 
 ASN_ROWS = "203.0.113.0\t203.0.113.255\t64496\tNL\tEXAMPLE-HOSTING\n"
 
@@ -157,7 +157,7 @@ def test_net_is_honest_when_the_table_has_no_answer(tmp_path: Path):
     assert "ip2asn.tsv" in reply.stdout  # which table was asked, not just "no"
 
 
-# -- what happens when the paths are wrong ---------------------------------
+# What happens when the paths are wrong
 
 
 def test_a_missing_run_is_a_sentence_not_a_traceback(tmp_path: Path):

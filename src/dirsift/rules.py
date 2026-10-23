@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from .extract import defang
+from .extract import SecretPieces, defang
 from .models import Entry, Ioc, ScanResult
 
 #: How many bytes of a head go into a fallback rule.
@@ -34,9 +34,10 @@ IOC_PREFIX = {
     "email": "mail",
     "path": "path",
     "mutex": "mutex",
-    "secret": "secret",
     "btc": "wallet",
 }
+# A secret is never written into a rule: a rule is a file meant for sharing,
+# and a credential found on someone else's server does not travel further.
 
 #: Shorter than this catches half the internet, so it is left out.
 MIN_IOC = 7
@@ -96,12 +97,29 @@ def _generic_head(entry: Entry) -> str | None:
     return None
 
 
-def _strings_from(entry: Entry) -> list[str]:
-    """Lines worth keeping: long enough to mean something, trimmed, deduplicated."""
+def _holds_secret(entry: Entry, iocs: list[Ioc]) -> bool:
+    """Whether the run found a secret in this file."""
+    return any(ioc.ioc_type == "secret" and ioc.found_in(entry.url) for ioc in iocs)
+
+
+def _printable(data: bytes) -> bool:
+    """Whether every byte is printable ASCII or ordinary whitespace: text, not a header."""
+    return all(32 <= byte < 127 or byte in (9, 10, 13) for byte in data)
+
+
+def _strings_from(entry: Entry, secrets: SecretPieces | None = None) -> list[str]:
+    """Lines worth keeping: long enough to mean something, trimmed, deduplicated.
+
+    A line holding any piece of a secret is skipped whole, not cut: the rest
+    of it is the secret's context and would point straight at it.
+    """
     if not entry.text_preview:
         return []
+    secrets = secrets or SecretPieces([])
     picked: list[str] = []
     for line in entry.text_preview.split(chr(10)):
+        if secrets.carried_by(line):
+            continue
         candidate = line.strip()[:MAX_STRING]
         if len(candidate) < MIN_STRING or not candidate.isprintable():
             continue
@@ -116,8 +134,11 @@ def _iocs_of(entry: Entry, iocs: list[Ioc]) -> list[Ioc]:
     """The indicators this file carried, longest first, deduplicated."""
     seen: set[str] = set()
     picked: list[Ioc] = []
+    secrets = SecretPieces(iocs)
     for ioc in sorted(iocs, key=lambda item: len(item.value), reverse=True):
         if not ioc.found_in(entry.url) or ioc.ioc_type not in IOC_PREFIX:
+            continue
+        if secrets.carried_by(ioc.value) or secrets.carried_by(_literal(ioc, entry)):
             continue
         if len(ioc.value) < MIN_IOC or ioc.value in seen:
             continue
@@ -152,7 +173,9 @@ def _literal(ioc: Ioc, entry: Entry) -> str:
     return ioc.value
 
 
-def _meta(entry: Entry, result: ScanResult, run_name: str, stamp: str) -> list[str]:
+def _meta(
+    entry: Entry, result: ScanResult, run_name: str, stamp: str, tlp: str | None = None
+) -> list[str]:
     lines = [
         "    meta:",
         '        author = "cyb3rp03t"',
@@ -162,6 +185,8 @@ def _meta(entry: Entry, result: ScanResult, run_name: str, stamp: str) -> list[s
         '        file = "' + _quote(entry.name) + '"',
         '        created = "' + stamp + '"',
     ]
+    if tlp:
+        lines.append('        tlp = "' + _quote(tlp) + '"')
     if entry.sha256:
         lines.append('        sha256 = "' + entry.sha256 + '"')
     if entry.md5:
@@ -179,10 +204,12 @@ def _meta(entry: Entry, result: ScanResult, run_name: str, stamp: str) -> list[s
     return lines
 
 
-def _rule_for(entry: Entry, result: ScanResult, run_name: str, stamp: str) -> list[str]:
+def _rule_for(
+    entry: Entry, result: ScanResult, run_name: str, stamp: str, tlp: str | None = None
+) -> list[str]:
     base = _identifier("dirsift_" + run_name + "_" + entry.name)[:96]
     lines = ["rule " + base, "{"]
-    lines.extend(_meta(entry, result, run_name, stamp))
+    lines.extend(_meta(entry, result, run_name, stamp, tlp))
     lines.append("    strings:")
 
     carried = _iocs_of(entry, result.iocs)
@@ -204,7 +231,16 @@ def _rule_for(entry: Entry, result: ScanResult, run_name: str, stamp: str) -> li
         lines.append("}")
         return lines
 
-    quoted = _strings_from(entry)
+    # Fail closed: a file the run found a secret in gets no rule from its own
+    # text or its first bytes, whatever the detector thought the secret's
+    # edges were. Its indicators above are the only way it gets a rule.
+    if _holds_secret(entry, result.iocs):
+        return _no_rule(
+            entry, "it holds a secret, and a rule from its text would carry part of it"
+        )
+
+    secrets = SecretPieces(result.iocs)
+    quoted = _strings_from(entry, secrets)
     if quoted:
         for number, value in enumerate(quoted, start=1):
             lines.append('        $s' + str(number) + ' = "' + _quote(value) + '" ascii')
@@ -216,6 +252,19 @@ def _rule_for(entry: Entry, result: ScanResult, run_name: str, stamp: str) -> li
     generic = _generic_head(entry)
     head = _head_bytes(entry)
     if head and not generic:
+        data = bytes.fromhex(head.replace(" ", ""))
+        # A head that is all text is the text path's job, not this one: a
+        # text file's first bytes are its first line, secret or not.
+        if _printable(data):
+            return _no_rule(
+                entry,
+                "it gave up no indicators and its first bytes are plain text "
+                "with nothing long enough to match on",
+            )
+        if secrets.carried_by(data.decode("latin-1")):
+            return _no_rule(
+                entry, "its first bytes carry part of a secret the run found"
+            )
         lines.append("        $head = { " + head + " }")
         lines.append("    condition:")
         lines.append("        $head at 0")
@@ -227,24 +276,35 @@ def _rule_for(entry: Entry, result: ScanResult, run_name: str, stamp: str) -> li
         if generic
         else "the scan kept no bytes from it"
     )
+    return _no_rule(entry, "it gave up no indicators and " + reason)
+
+
+def _no_rule(entry: Entry, reason: str) -> list[str]:
+    """The comment a file gets in place of a rule, with the reason."""
     return [
-        "// No rule for " + entry.name + ": it gave up no indicators and " + reason + ".",
+        "// No rule for " + entry.name + ": " + reason + ".",
         "// Read more of it before writing one; a rule on that alone would match",
         "// everything of its kind and tell you nothing.",
     ]
 
 
-def build_rules(result: ScanResult, entries: list[Entry], run_name: str) -> str:
-    """One YARA rule per selected file, keyed to the indicators it carried."""
+def build_rules(
+    result: ScanResult, entries: list[Entry], run_name: str, *, tlp: str | None = None
+) -> str:
+    """One YARA rule per selected file, keyed to the indicators it carried.
+
+    ``tlp`` is a label such as "TLP:AMBER"; given, it goes into the header and
+    into every rule's meta.
+    """
     stamp = datetime.now(UTC).strftime("%Y-%m-%d")
     header = [
         "// Built by dirsift from a scan of " + defang(result.root_url),
-        "// Run " + run_name + ", " + stamp,
+        "// Run " + run_name + ", " + stamp + (", " + tlp if tlp else ""),
         "// Each rule matches on the indicators its file carried. The digests are in",
         "// meta: identity for the sample the indicators came from, not the condition.",
         "",
     ]
-    blocks = [_rule_for(entry, result, run_name, stamp) for entry in entries]
+    blocks = [_rule_for(entry, result, run_name, stamp, tlp) for entry in entries]
     if not blocks:
         return chr(10).join(header) + "// Nothing was selected." + chr(10)
     body = (chr(10) + chr(10)).join(chr(10).join(block) for block in blocks)

@@ -1,15 +1,16 @@
 {% if job.state in ("queued", "running") %}
 <div hx-get="/jobs/{{ job.id }}/status" hx-trigger="load delay:900ms" hx-target="this"
      hx-swap="outerHTML" aria-busy="true">
-  <div class="progress-track" role="progressbar" aria-label="Scan in progress">
+  <div class="progress-track" role="progressbar" aria-label="Scan in progress"
+       aria-valuetext="{{ job.stage }}{% if job.detail %}, {{ job.detail }}{% endif %}">
     <span class="progress-pulse"></span>
   </div>
-  <ul class="chips" style="margin-block-start: var(--space-4)">
+  <ul class="chips gap-above-4">
     <li class="chip is-signal">{{ job.state }}</li>
     <li class="chip">{{ job.listings }} listings read</li>
     <li class="chip">{{ job.peeks }} files opened</li>
   </ul>
-  <p class="quiet data" style="margin-block: var(--space-3) 0">{{ job.stage }} {{ job.detail }}</p>
+  <p class="quiet data gap-above-3 flush-bottom">{{ job.stage }} {{ job.detail }}</p>
 </div>
 {% elif job.state == "done" %}
 <div>
@@ -18,7 +19,7 @@
     <li class="chip">{{ job.listings }} listings read</li>
     <li class="chip">{{ job.peeks }} files opened</li>
   </ul>
-  <p style="margin-block: var(--space-4) 0">
+  <p class="gap-above-4 flush-bottom">
     <a href="/runs/{{ job.run_name }}">Open the triage page</a>
   </p>
   <script>window.location = "/runs/{{ job.run_name }}";</script>
@@ -28,7 +29,7 @@
   <ul class="chips">
     <li class="chip is-alert">failed</li>
   </ul>
-  <p class="notice is-alert" style="margin-block-start: var(--space-4)">
+  <p class="notice is-alert gap-above-4">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
          stroke-width="2" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path>

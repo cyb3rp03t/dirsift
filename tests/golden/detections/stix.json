@@ -1,0 +1,554 @@
+{
+  "type": "bundle",
+  "id": "bundle--c5969cd0-a5b2-4072-9060-4aedee3cc6bc",
+  "objects": [
+    {
+      "type": "domain-name",
+      "spec_version": "2.1",
+      "id": "domain-name--28efb447-9783-5c8d-bd9c-fda574aeccf2",
+      "value": "c2.evil-update.top",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ]
+    },
+    {
+      "type": "domain-name",
+      "spec_version": "2.1",
+      "id": "domain-name--403b111a-3bd3-56fd-86d1-9080790dc86e",
+      "value": "cdn.panel-gate.xyz",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ]
+    },
+    {
+      "type": "domain-name",
+      "spec_version": "2.1",
+      "id": "domain-name--870ff6e7-55f1-5020-a6d2-97557c63b0c9",
+      "value": "panel-gate.xyz",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ]
+    },
+    {
+      "type": "file",
+      "spec_version": "2.1",
+      "id": "file--d21d7891-8414-57d0-91b1-bec1b1bafad5",
+      "hashes": {
+        "MD5": "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+        "SHA-256": "9f2c1b7d3e4a5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8"
+      },
+      "name": "loader.sh",
+      "size": 200,
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ]
+    },
+    {
+      "type": "identity",
+      "spec_version": "2.1",
+      "id": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6",
+      "created": "2026-09-13T00:00:00.000Z",
+      "modified": "2026-09-13T00:00:00.000Z",
+      "name": "cyb3rp03t",
+      "identity_class": "individual",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ]
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--2dc0ec4a-5583-4bf5-8845-946d1d71749e",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "name": "https://raw.githubusercontent.com/someone/tools/main/x.ps1",
+      "description": "Found in notes.txt; extracted from file contents by dirsift.",
+      "pattern": "[url:value = 'https://raw.githubusercontent.com/someone/tools/main/x.ps1']",
+      "pattern_type": "stix",
+      "valid_from": "2026-10-01T09:00:00.000Z",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--3799836b-cd63-4002-b81b-8406171cf76a",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "name": "c2.evil-update.top",
+      "description": "Found in loader.sh; extracted from file contents by dirsift.",
+      "pattern": "[domain-name:value = 'c2.evil-update.top']",
+      "pattern_type": "stix",
+      "valid_from": "2026-10-01T09:00:00.000Z",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--39d8bba0-ca5a-49fb-85f8-5cbe820e86d6",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "name": "203.0.113.9",
+      "description": "Found in loader.sh; extracted from file contents by dirsift.",
+      "pattern": "[ipv4-addr:value = '203.0.113.9']",
+      "pattern_type": "stix",
+      "valid_from": "2026-10-01T09:00:00.000Z",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--42be97be-8d3b-449e-bb58-53fdedf8426c",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "name": "2001:db8::7",
+      "description": "Found in notes.txt; extracted from file contents by dirsift.",
+      "pattern": "[ipv6-addr:value = '2001:db8::7']",
+      "pattern_type": "stix",
+      "valid_from": "2026-10-01T09:00:00.000Z",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--72056bfc-227d-4e38-ba3d-debca82e77b8",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "name": "panel-gate.xyz",
+      "description": "Found in the directory itself; extracted from file contents by dirsift.",
+      "pattern": "[domain-name:value = 'panel-gate.xyz']",
+      "pattern_type": "stix",
+      "valid_from": "2026-10-01T09:00:00.000Z",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--9869fecd-fc5f-4731-b0a3-b8dfcb3f395e",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "name": "cdn.panel-gate.xyz",
+      "description": "Found in loader.sh; extracted from file contents by dirsift.",
+      "pattern": "[domain-name:value = 'cdn.panel-gate.xyz']",
+      "pattern_type": "stix",
+      "valid_from": "2026-10-01T09:00:00.000Z",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--a9e0d869-2e11-4f65-bc0b-9874aa83efd8",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "name": "http://c2.evil-update.top/gate.php?id=1&k=*",
+      "description": "Found in loader.sh; extracted from file contents by dirsift.",
+      "pattern": "[url:value = 'http://c2.evil-update.top/gate.php?id=1&k=*']",
+      "pattern_type": "stix",
+      "valid_from": "2026-10-01T09:00:00.000Z",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--b0aee8d4-41cb-4153-97d0-2189cb497719",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "name": "http://panel-gate.xyz/files/",
+      "description": "Found in the directory itself; extracted from file contents by dirsift.",
+      "pattern": "[url:value = 'http://panel-gate.xyz/files/']",
+      "pattern_type": "stix",
+      "valid_from": "2026-10-01T09:00:00.000Z",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--d0e29bf4-68ac-47b3-a562-4560553243d2",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "name": "loader.sh",
+      "description": "script file read whole by dirsift.",
+      "pattern": "[file:hashes.'SHA-256' = '9f2c1b7d3e4a5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8']",
+      "pattern_type": "stix",
+      "valid_from": "2026-10-01T09:00:00.000Z",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "indicator",
+      "spec_version": "2.1",
+      "id": "indicator--f4b8c639-390e-427a-a383-f710f48255f8",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "name": "198.51.100.23",
+      "description": "Found in the directory itself; extracted from file contents by dirsift.",
+      "pattern": "[ipv4-addr:value = '198.51.100.23']",
+      "pattern_type": "stix",
+      "valid_from": "2026-10-01T09:00:00.000Z",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "infrastructure",
+      "spec_version": "2.1",
+      "id": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "name": "panel-gate.xyz/files/",
+      "description": "Open directory index (nginx) served by nginx, listing 4 files, walked by dirsift on 2026-10-01. dirsift records what was served and makes no judgement about it.",
+      "infrastructure_types": [
+        "hosting-malware"
+      ],
+      "first_seen": "2026-10-01T09:00:00.000Z",
+      "last_seen": "2026-10-01T09:00:00.000Z",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "ipv4-addr",
+      "spec_version": "2.1",
+      "id": "ipv4-addr--39090fdc-366e-571f-ab5b-d05e2918f88f",
+      "value": "203.0.113.9",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ]
+    },
+    {
+      "type": "ipv4-addr",
+      "spec_version": "2.1",
+      "id": "ipv4-addr--cec0294c-86c8-52cc-8448-ba43593736df",
+      "value": "198.51.100.23",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ]
+    },
+    {
+      "type": "ipv6-addr",
+      "spec_version": "2.1",
+      "id": "ipv6-addr--9ed76cd5-ab3b-55a5-b6ec-b55c3efb0be2",
+      "value": "2001:db8::7",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ]
+    },
+    {
+      "type": "marking-definition",
+      "spec_version": "2.1",
+      "id": "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82",
+      "created": "2017-01-20T00:00:00.000Z",
+      "definition_type": "tlp",
+      "name": "TLP:AMBER",
+      "definition": {
+        "tlp": "amber"
+      }
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--0889bb3d-525d-4bbb-930d-819f356a26c8",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--42be97be-8d3b-449e-bb58-53fdedf8426c",
+      "target_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--0c1056ac-f9cc-4488-a84a-ec7938dcdcf1",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "consists-of",
+      "source_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "target_ref": "domain-name--870ff6e7-55f1-5020-a6d2-97557c63b0c9",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--195f51da-2ab0-4b7f-8952-b89211c42fed",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--39d8bba0-ca5a-49fb-85f8-5cbe820e86d6",
+      "target_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--2915e4de-cb17-4655-83ba-750c54ec28a7",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "consists-of",
+      "source_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "target_ref": "url--99e552c1-ab47-56f2-a009-fd0a2d4a3bd0",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--5cfa8bba-5b80-4f39-813c-1f156b04e177",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "related-to",
+      "source_ref": "file--d21d7891-8414-57d0-91b1-bec1b1bafad5",
+      "target_ref": "ipv4-addr--39090fdc-366e-571f-ab5b-d05e2918f88f",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--6a4c95d9-86f1-4cc5-9cee-cd6a32c1b786",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--a9e0d869-2e11-4f65-bc0b-9874aa83efd8",
+      "target_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--731097ed-d7d9-48ec-87ca-68fee0865326",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "related-to",
+      "source_ref": "file--d21d7891-8414-57d0-91b1-bec1b1bafad5",
+      "target_ref": "url--3dd2ee71-933e-5813-aa11-ffbb0925fd64",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--7f9aa169-8ce4-414e-a4f7-68ccaee56887",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--3799836b-cd63-4002-b81b-8406171cf76a",
+      "target_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--a0859a4e-db3c-49d1-aeee-e8ffa8b9c03c",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--9869fecd-fc5f-4731-b0a3-b8dfcb3f395e",
+      "target_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--a56c8f31-4a7c-46d7-85ed-8c0791578ea5",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--d0e29bf4-68ac-47b3-a562-4560553243d2",
+      "target_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--abc47be6-fb38-4a69-9b8f-70861b064a90",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "related-to",
+      "source_ref": "file--d21d7891-8414-57d0-91b1-bec1b1bafad5",
+      "target_ref": "domain-name--28efb447-9783-5c8d-bd9c-fda574aeccf2",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--b55e43f5-89ab-45a8-92eb-e3e88bf00b81",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "consists-of",
+      "source_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "target_ref": "file--d21d7891-8414-57d0-91b1-bec1b1bafad5",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--b8097fb2-df51-40aa-b0ee-fd7ef33591cf",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "related-to",
+      "source_ref": "file--d21d7891-8414-57d0-91b1-bec1b1bafad5",
+      "target_ref": "domain-name--403b111a-3bd3-56fd-86d1-9080790dc86e",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--d3d3fbcf-861a-40c1-923b-4f66ee439bbf",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--f4b8c639-390e-427a-a383-f710f48255f8",
+      "target_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--d945bcb9-3608-4852-a8c7-59658fde66ff",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--b0aee8d4-41cb-4153-97d0-2189cb497719",
+      "target_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--f1acdf81-0240-4165-b110-02c31f122812",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--2dc0ec4a-5583-4bf5-8845-946d1d71749e",
+      "target_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--fb625527-a763-4f83-a0e6-6532d3cf4f82",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "indicates",
+      "source_ref": "indicator--72056bfc-227d-4e38-ba3d-debca82e77b8",
+      "target_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "relationship",
+      "spec_version": "2.1",
+      "id": "relationship--fbbaec12-31c1-457b-ac36-733a22027ec3",
+      "created": "2026-10-01T09:00:00.000Z",
+      "modified": "2026-10-01T09:00:00.000Z",
+      "relationship_type": "consists-of",
+      "source_ref": "infrastructure--0c99d785-99a0-42c9-98d8-e565e6f9b09f",
+      "target_ref": "ipv4-addr--cec0294c-86c8-52cc-8448-ba43593736df",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ],
+      "created_by_ref": "identity--aad761db-f308-4abb-b498-6db0e1a75ec6"
+    },
+    {
+      "type": "url",
+      "spec_version": "2.1",
+      "id": "url--2dc899d0-d315-5385-a702-b76a6eafdb06",
+      "value": "https://raw.githubusercontent.com/someone/tools/main/x.ps1",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ]
+    },
+    {
+      "type": "url",
+      "spec_version": "2.1",
+      "id": "url--3dd2ee71-933e-5813-aa11-ffbb0925fd64",
+      "value": "http://c2.evil-update.top/gate.php?id=1&k=*",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ]
+    },
+    {
+      "type": "url",
+      "spec_version": "2.1",
+      "id": "url--99e552c1-ab47-56f2-a009-fd0a2d4a3bd0",
+      "value": "http://panel-gate.xyz/files/",
+      "object_marking_refs": [
+        "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"
+      ]
+    }
+  ]
+}

@@ -197,7 +197,7 @@ def test_the_rule_uses_the_form_the_file_actually_contains():
     assert '"http://panel.example.net/admin" ascii' not in rules
 
 
-# -- an indicator two files carry ------------------------------------------
+# An indicator two files carry
 
 
 def test_an_indicator_shared_by_two_builds_goes_into_both_rules():
@@ -221,7 +221,7 @@ def test_an_indicator_shared_by_two_builds_goes_into_both_rules():
     assert '"http://panel-gate.xyz/gate.php" ascii' in rules
 
 
-# -- compiled and run against the file they came from ------------------------------
+# Compiled and run against the file they came from
 
 
 def compiled_on(result: ScanResult, entries: list[Entry]) -> tuple[str, dict[str, list[str]]]:

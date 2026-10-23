@@ -14,6 +14,7 @@ import pytest
 from dirsift.fetcher import MIN_DELAY, Response
 from dirsift.models import Entry, ScanResult
 from dirsift.report import render_markdown
+from dirsift.report_model import build_report
 from dirsift.walker import ScanOptions, scan
 
 LOADER = b"@echo off\nstart payload.exe\n"
@@ -49,7 +50,7 @@ def response(body: bytes, *, truncated: bool) -> Response:
     )
 
 
-# -- the hashes themselves -------------------------------------------------
+# The hashes themselves
 
 
 def test_a_whole_file_gets_both_hashes():
@@ -65,7 +66,7 @@ def test_a_cut_read_has_neither_hash():
     assert read.md5 is None
 
 
-# -- what the walker records -----------------------------------------------
+# What the walker records
 
 
 def test_the_walker_records_both_hashes_and_the_first_bytes(server):
@@ -88,7 +89,7 @@ def test_a_file_cut_at_the_ceiling_is_marked_partial(server):
     assert payload.head_hex == PAYLOAD[:16].hex()
 
 
-# -- the report ------------------------------------------------------------
+# The report
 
 
 def test_the_report_lists_the_hashes_it_has():
@@ -112,8 +113,9 @@ def test_the_report_lists_the_hashes_it_has():
             truncated=True,
         )
     )
-    markdown = render_markdown(result, [])
-    assert "## Hashes" in markdown
-    assert "a" * 64 in markdown
-    assert "b" * 32 in markdown
-    assert "big.exe" not in markdown.split("## Hashes", 1)[1].split("##", 1)[0]
+    markdown = render_markdown(build_report(result, []))
+    listing = markdown.split("## Appendix A.", 1)[1].split("## Appendix B.", 1)[0]
+    assert "a" * 64 in listing
+    assert "b" * 32 in listing
+    big = next(line for line in listing.splitlines() if "`big.exe`" in line)
+    assert "cut at the ceiling" in big

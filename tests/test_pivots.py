@@ -97,7 +97,7 @@ def pivot(result_and_candidates, engine: str, query: str):
     return matches[0]
 
 
-# -- the listing ---------------------------------------------------------------
+# The listing
 
 
 def test_a_listing_at_the_root_gives_a_title_server_and_port_pivot():
@@ -126,7 +126,7 @@ def test_a_title_that_needs_escaping_is_skipped_and_said():
     assert any("skipped, value needs escaping" in note for note in pivot_notes(*loaded))
 
 
-# -- urls ----------------------------------------------------------------------
+# Urls
 
 
 def test_the_shodan_url_is_the_query_percent_encoded():
@@ -149,7 +149,7 @@ def test_the_fofa_url_decodes_back_to_the_query():
     assert unquote(found.url.split("=", 1)[1]) == encoded
 
 
-# -- the engines only index the root of a port -----------------------------------
+# The engines only index the root of a port
 
 
 def test_a_listing_below_the_root_is_marked_and_demoted():
@@ -186,7 +186,7 @@ def test_a_listing_at_the_root_adds_no_guess():
     assert titles == []
 
 
-# -- the Server header -----------------------------------------------------------
+# The Server header
 
 
 def test_the_server_header_in_both_engines():
@@ -211,7 +211,7 @@ def test_server_pivots_ignore_where_the_listing_sits():
     assert found.strength == "narrow"
 
 
-# -- file names ----------------------------------------------------------------
+# File names
 
 
 def test_the_driver_a_family_member_and_a_lying_extension_become_pivots():
@@ -270,7 +270,7 @@ def test_non_ascii_names_survive_the_query_and_the_url():
     assert base64.b64decode(encoded).decode("utf-8") == f'body="{name}"'
 
 
-# -- the network, the host and its neighbours -------------------------------------
+# The network, the host and its neighbours
 
 
 def test_a_known_network_narrows_the_title_and_port():
@@ -310,7 +310,7 @@ def test_a_named_host_gets_a_hostname_pivot_and_an_address_does_not():
     assert not [q for q in queries(run(), basis="host") if "hostname" in q or "host=" in q]
 
 
-# -- indicators ------------------------------------------------------------------
+# Indicators
 
 
 def test_indicators_become_address_and_host_pivots():
@@ -328,7 +328,7 @@ def test_a_private_indicator_is_skipped_and_counted():
     assert any("1 private address" in note for note in pivot_notes(*loaded))
 
 
-# -- the page and the pipe ------------------------------------------------------
+# The page and the pipe
 
 
 def markdown_of(loaded) -> str:
@@ -392,7 +392,7 @@ def test_select_by_engine_and_strength():
     assert len(select(pivots, strength="broad")) == len(pivots)
 
 
-# -- the command -----------------------------------------------------------------
+# The command
 
 
 def saved(tmp_path: Path, root: str = AT_ROOT, **kw) -> Path:

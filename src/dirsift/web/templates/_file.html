@@ -1,19 +1,17 @@
-<div class="preview">
+<div class="preview" data-preview-file="{{ entry.url }}">
   <div class="preview-head">
-    <p class="quiet" style="margin: 0">Preview</p>
-    <p class="preview-name" style="margin: 0">{{ entry.name }}</p>
-    <ul class="chips">
-      <li class="chip">{{ entry.kind }}</li>
-      <li class="chip">{{ entry.confidence }}</li>
-      {% if entry.magic %}<li class="chip">{{ entry.magic }}</li>{% endif %}
-      {% if entry.cluster %}<li class="chip is-signal">{{ entry.cluster }}</li>{% endif %}
-      {% if entry.truncated %}<li class="chip is-warn">partial read</li>{% endif %}
+    <p class="quiet">Preview</p>
+    <h2 class="preview-name" tabindex="-1">{{ entry.name }}</h2>
+    <ul class="meta">
+      <li>{{ entry.kind }}</li>
+      <li>{{ entry.confidence }}</li>
+      {% if entry.magic %}<li>{{ entry.magic }}</li>{% endif %}
+      {% if entry.cluster %}<li>{{ entry.cluster }}</li>{% endif %}
+      {% if entry.truncated %}<li>partial read</li>{% endif %}
       {%- if entry.verdict and entry.verdict.found %}
-      <li class="chip {% if entry.verdict.malicious %}is-alert{% else %}is-good{% endif %}">
-        {{ entry.verdict.malicious }}/{{ entry.verdict.total }} engines
-      </li>
+      <li>{{ entry.verdict.malicious }}/{{ entry.verdict.total }} engines</li>
       {%- elif entry.verdict %}
-      <li class="chip is-warn">not seen by the scanner</li>
+      <li>not seen by the scanner</li>
       {%- endif %}
     </ul>
   </div>
@@ -79,16 +77,16 @@
       {% endif %}
     </div>
     {% if note %}
-    <p class="quiet" style="margin: 0">{{ note }}</p>
+    <p class="quiet flush">{{ note }}</p>
     {% endif %}
-    <p class="quiet" style="margin: 0">
+    <p class="quiet flush">
       Check asks VirusTotal from here and writes the score into the run: a hash
       goes out, never the file. Open hands the same hash to your browser
       instead, which costs no key and no quota.
       {%- if not verdict_ready %} No key is set, so check will explain how to set one.{% endif %}
     </p>
     {% if not entry.sha256 and entry.truncated %}
-    <p class="quiet" style="margin: 0">
+    <p class="quiet flush">
       No hash: only the head of this file was read, and half a file hashes to
       nothing anyone can look up.
     </p>
@@ -101,20 +99,20 @@
     <button type="button" class="tab" role="tab" id="tab-hex"
             aria-controls="panel-hex" aria-selected="false">Hex</button>
     <button type="button" class="tab" role="tab" id="tab-links"
-            aria-controls="panel-links" aria-selected="false">Links</button>
+            aria-controls="panel-links" aria-selected="false">Links <span class="count">{{ iocs | length }}</span></button>
   </div>
 
   <div class="tab-panel" role="tabpanel" id="panel-contents" aria-labelledby="tab-contents">
     {% if entry.text_preview %}
-    <div class="button-row" style="margin-block-end: var(--space-3)">
+    <div class="button-row gap-below-3">
       <label class="inline" for="find-in-file">find</label>
       <input id="find-in-file" type="text" data-find="file-source" data-find-count="find-count"
              placeholder="text in this file" autocomplete="off" spellcheck="false"
-             style="inline-size: 12rem">
+             class="control-md">
       <span class="quiet" id="find-count" aria-live="polite"></span>
       <button type="button" class="copy" data-wrap="file-source" aria-pressed="false">wrap</button>
     </div>
-    <p class="quiet" style="margin-block: 0 var(--space-2)">
+    <p class="quiet flush-top gap-below-2">
       Raw, exactly as served. Not defanged: read it before pasting it anywhere.
     </p>
     <pre class="source" id="file-source" tabindex="0" role="region"
@@ -154,11 +152,11 @@
   </div>
 
   <div class="tab-panel" role="tabpanel" id="panel-links" aria-labelledby="tab-links" hidden>
-    <h3 class="section-title" style="margin-block-start: 0">
+    <h3 class="section-title flush-top">
       Indicators here <span class="count">{{ iocs | length }}</span>
     </h3>
     {% if iocs %}
-    <ul class="chips" style="flex-direction: column; align-items: start">
+    <ul class="chips is-stacked">
       {% for ioc in iocs %}
       <li class="chip">
         <span class="quiet">{{ ioc.ioc_type }}</span>
@@ -183,9 +181,10 @@
     <h3 class="section-title">Named by</h3>
     <p class="button-row">
       {% for other in referenced_by %}
-      <button type="button" class="link-button" data-file-url="{{ other.url }}"
-              hx-get="/runs/{{ name }}/file?url={{ other.url | urlencode }}"
-              hx-target="#preview" hx-swap="innerHTML">{{ other.name }}</button>
+      <a class="link-button" href="/runs/{{ name }}?file={{ other.url | urlencode }}#preview-sheet"
+         data-file-url="{{ other.url }}"
+         hx-get="/runs/{{ name }}/file?url={{ other.url | urlencode }}"
+         hx-target="#preview" hx-swap="innerHTML">{{ other.name }}</a>
       {% endfor %}
     </p>
     {% endif %}
@@ -195,9 +194,10 @@
     <div class="grid">
       {% for other in siblings %}
       <div class="button-row">
-        <button type="button" class="link-button" data-file-url="{{ other.url }}"
-                hx-get="/runs/{{ name }}/file?url={{ other.url | urlencode }}"
-                hx-target="#preview" hx-swap="innerHTML">{{ other.name }}</button>
+        <a class="link-button" href="/runs/{{ name }}?file={{ other.url | urlencode }}#preview-sheet"
+           data-file-url="{{ other.url }}"
+           hx-get="/runs/{{ name }}/file?url={{ other.url | urlencode }}"
+           hx-target="#preview" hx-swap="innerHTML">{{ other.name }}</a>
         <button type="button" class="copy"
                 hx-get="/runs/{{ name }}/diff?a={{ entry.url | urlencode }}&amp;b={{ other.url | urlencode }}"
                 hx-target="#preview" hx-swap="innerHTML">compare</button>

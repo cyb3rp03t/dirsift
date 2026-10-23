@@ -1,0 +1,132 @@
+{#- The rule pack: one form over the run's shareable indicators. Changing any
+    control redraws this panel (htmx); without the script the Show button sends
+    the same form. Which product card is open is part of the form (target), so a
+    redraw keeps it. Previews are defanged; copy and download fetch the live file. -#}
+{% set group_names = {"existing": "Run exports", "blocklist": "Block lists", "siem": "SIEM hunts", "share": "SOAR / sharing"} %}
+{% set group_order = ["siem", "blocklist", "share", "existing"] %}
+{% set pack = targets | rejectattr("id", "equalto", "yara") | list %}
+{% set asked_group = request.query_params.get("group") %}
+{% set asked_target = request.query_params.get("target") %}
+{% set group = asked_group if asked_group in group_order else none %}
+{% set by_id = pack | selectattr("id", "equalto", asked_target) | list %}
+{% if by_id and (group is none or by_id[0].group == group) %}
+  {% set chosen = by_id[0] %}
+{% else %}
+  {% set in_group = pack | selectattr("group", "equalto", group or "siem") | list %}
+  {% set chosen = (in_group or pack)[0] if (in_group or pack) else none %}
+{% endif %}
+{% set group = chosen.group if chosen else (group or "siem") %}
+{% set left_by = (chosen.left_out if chosen and chosen.left_out is defined else left_out) or {} %}
+{% set left_total = left_by.values() | sum %}
+
+<div class="det-panel" id="det-panel">
+  {% if not pack %}
+  <p class="empty">No detection formats are available for this run.</p>
+  {% else %}
+  <form class="det-form" method="get" action="/runs/{{ name }}/detections"
+        hx-get="/runs/{{ name }}/detections" hx-target="#det-panel" hx-swap="outerHTML"
+        hx-trigger="change, submit" hx-sync="this:replace" data-det-form>
+    <fieldset class="filtbar">
+      <legend class="visually-hidden">Which indicators go into the rules</legend>
+      <div class="fb-row">
+        <span class="fb-l" aria-hidden="true">include</span>
+        {% for kind, count in types.items() %}
+        <label class="facet is-check">
+          <input type="checkbox" name="types" value="{{ kind }}"
+                 {% if options.types is none or kind in options.types %}checked{% endif %}
+                 {% if not count %}disabled{% endif %}>
+          {{ kind }} <b>{{ count }}</b>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="fb-row">
+        <label class="fb-l" for="det-source">source</label>
+        <select id="det-source" name="source" class="src-sel">
+          <option value="">all files ({{ sources | length }})</option>
+          {% for source in sources %}
+          <option value="{{ source.url }}"{% if options.source == source.url %} selected{% endif %}>{{ source.path }} ({{ source.count }})</option>
+          {% endfor %}
+        </select>
+        <input type="hidden" name="exclude_private" value="false">
+        <label class="inline"><input type="checkbox" name="exclude_private" value="true"
+               {% if options.exclude_private %}checked{% endif %}> leave out private and reserved</label>
+        <input type="hidden" name="exclude_protocol" value="false">
+        <label class="inline"><input type="checkbox" name="exclude_protocol" value="true"
+               {% if options.exclude_protocol %}checked{% endif %}> leave out protocol strings</label>
+      </div>
+      <div class="fb-row">
+        <label class="fb-l" for="det-tlp">TLP</label>
+        <select id="det-tlp" name="tlp" class="src-sel is-short">
+          {% for level in tlp_levels %}
+          <option{% if options.tlp == level %} selected{% endif %}>{{ level }}</option>
+          {% endfor %}
+        </select>
+        {% if chosen and chosen.group == "blocklist" %}
+        <label class="fb-l" for="det-profile">comments</label>
+        <select id="det-profile" name="profile" class="src-sel is-short">
+          {% for profile, said in [("generic", "# header lines"), ("paloalto", "Palo Alto style"), ("bare", "none")] %}
+          <option value="{{ profile }}"{% if options.profile == profile %} selected{% endif %}>{{ said }}</option>
+          {% endfor %}
+        </select>
+        {% endif %}
+
+      </div>
+    </fieldset>
+
+    <fieldset class="det-pick">
+      <legend class="visually-hidden">Where the rules go</legend>
+      <div class="tgt-nav" role="radiogroup" aria-label="Kind of tool">
+        {% for key in group_order if pack | selectattr("group", "equalto", key) | list %}
+        <label class="dgroup"><input type="radio" name="group" value="{{ key }}"{% if key == group %} checked{% endif %}> {{ group_names[key] }}</label>
+        {% endfor %}
+      </div>
+      <div class="prod-nav" role="radiogroup" aria-label="Format">
+        {% for target in pack if target.group == group %}
+        <label class="prod"><input type="radio" name="target" value="{{ target.id }}"{% if chosen and target.id == chosen.id %} checked{% endif %}> {{ target.label }}</label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <p class="det-busy" data-det-busy aria-hidden="true"><span class="det-busy-dot"></span>Updating the rules</p>
+    <noscript><p><button class="button is-quiet" type="submit">Show</button></p></noscript>
+  </form>
+
+  {% if chosen %}
+  <article class="rule-out" aria-labelledby="det-file">
+    <div class="out-top">
+      <h4 class="out-fn data" id="det-file">{{ chosen.filename }}</h4>
+      <span class="out-sub">{{ chosen.label }}{% if chosen.product and chosen.product != chosen.label %} · {{ chosen.product }}{% endif %}</span>
+      <span class="out-acts">
+        <button type="button" class="copy" data-copy-live="{{ chosen.download_url }}">copy</button>
+        <a class="copy is-out" href="{{ chosen.download_url }}" download="{{ chosen.filename }}">download .{{ chosen.filename.rsplit(".", 1)[-1] }}</a>
+      </span>
+    </div>
+    <div class="out-meta">
+      {% if chosen.live %}<span class="live-badge">live values in copy and download</span>{% endif %}
+      <span class="count data">
+        {{ chosen.count }} indicator{{ "" if chosen.count == 1 else "s" }}
+        {%- for kind, count in chosen.counts.items() if count %} · {{ count }} {{ kind }}{% endfor %}
+      </span>
+      {% if left_total %}
+      <span class="count det-left">{{ left_total }} left out:
+        {% for why, count in left_by.items() if count %}{{ count }} {{ why }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+      {% endif %}
+    </div>
+    <div class="rule-body" hx-get="{{ chosen.preview_url }}" hx-trigger="load" hx-swap="innerHTML">
+      <p class="empty">
+        The preview loads here, defanged.
+        <a href="{{ chosen.preview_url }}{{ '&' if '?' in chosen.preview_url else '?' }}format=text">Read it as text</a>.
+      </p>
+    </div>
+    <p class="quiet out-foot">
+      Hunt query, not a verdict. DirSift does not decide; an analyst runs it.
+      Wallets, mutexes and paths go into YARA only; a secret DirSift recognises goes into no file.
+    </p>
+  </article>
+  {% endif %}
+
+  <div class="pack-foot">
+    <a class="button is-quiet" href="{{ zip_url }}" data-zip>Download every format (zip)</a>
+    <span class="quiet">Each file above, live, with a manifest that says what was left out and why.</span>
+  </div>
+  {% endif %}
+</div>

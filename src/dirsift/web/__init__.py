@@ -14,30 +14,41 @@ pulled from a CDN, so this works on an air-gapped analysis box.
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
 import re
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 from fastapi import FastAPI, Form, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
+from .. import assessment as assess
+from .. import detections, report_text
 from ..analyze import analyze
 from ..asn import default_table
 from ..classify import mismatch
 from ..diagnose import explain
 from ..enrich import MissingKey, api_key_from_env, lookup_hash
-from ..extract import defang
+from ..extract import SecretMask, defang
 from ..fetcher import PrivateTargetError, ScopeError
 from ..models import Entry, Ioc, ScanResult
-from ..report import human_size, render_markdown
+from ..report import LOGO_MODES, human_size, render_markdown
+from ..report_model import ReportOptions, build_report, load_run_for_report, normalise_tlp
+from ..report_pdf import render_pdf
 from ..rules import build_rules
 from ..walker import ScanOptions, scan
 
@@ -102,6 +113,10 @@ class NoSuchRun(Exception):
     """A run name that is not a run in this folder."""
 
 
+class BadTlp(Exception):
+    """A TLP label in a query that is not one of the five."""
+
+
 #: A digest someone pastes: md5, sha1 or sha256, nothing else.
 HASH = re.compile(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")
 DIGEST_IN_FORM = Form(default="")
@@ -110,8 +125,69 @@ DIGEST_IN_FORM = Form(default="")
 PICKED_IN_FORM = Form(default=[])
 PICKED_IN_QUERY = Query(default=[])
 
+#: Repeated query fields for the detection routes.
+TYPES_IN_QUERY = Query(default=[])
+
+#: What a live download carries besides the file: never cached, never sniffed
+#: into something a browser would render.
+LIVE_HEADERS = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+
+#: The only Host headers the console answers to. A page served from one of
+#: these is the console's own; any other Host, a DNS-rebinding attacker's name
+#: that resolves to loopback, is refused before a handler runs, on GET as well
+#: as POST. The address passed to --host is added to this set when the app is
+#: built.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
+
+#: What a request from another page, or to a Host this console does not own, is
+#: told. The write is refused before a scan starts, a hash leaves the machine
+#: or a file is written.
+CROSS_ORIGIN_REFUSAL = assess.CROSS_ORIGIN
+BAD_HOST = "This console answers only to its own local address."
+
+
+def host_name(host_header: str) -> str:
+    """The host part of a Host header, without the port; IPv6 brackets kept."""
+    value = host_header.strip()
+    if value.startswith("["):
+        end = value.find("]")
+        return value[: end + 1] if end != -1 else value
+    return value.split(":", 1)[0]
+
 #: Bytes per row in the hex view.
 HEX_COLUMNS = 16
+
+#: The sections of a run page, in tab order. The first is shown when none is asked for.
+RUN_TABS = ("files", "indicators", "families", "notes", "settings")
+
+#: The full-page error views. Each is rendered through error.html, which extends
+#: base.html, so the language, the title, a single h1 and the main landmark come
+#: from the shell rather than from a bare response. The quote is filled in only
+#: for a refusal, where it carries a URL a target's listing supplied.
+ERROR_NO_SUCH_JOB = {
+    "title": "scan not found",
+    "heading": "This scan is no longer tracked.",
+    "body": (
+        "Scans are tracked in memory while the console runs. This one has "
+        "finished, or the console restarted. Finished runs are on the dashboard."
+    ),
+}
+ERROR_NO_SUCH_RUN = {
+    "title": "run not found",
+    "heading": "No run by that name.",
+    "body": (
+        "This run is not in the runs folder. It may have been renamed or "
+        "removed. The dashboard lists every run on disk."
+    ),
+}
+ERROR_REFUSED = {
+    "title": "refused",
+    "heading": "That link was out of scope.",
+    "body": (
+        "A link in the listing pointed outside the scan's scope, so it was "
+        "not followed."
+    ),
+}
 
 
 def _hex_rows(head_hex: str | None) -> list[dict[str, str]]:
@@ -192,7 +268,13 @@ def _preview(
         "name": name,
         "entry": entry,
         "mismatch": mismatch(entry),
-        "iocs": [ioc for ioc in result.iocs if ioc.found_in(entry.url)],
+        # The list names a secret instead of quoting it; the contents tab is the
+        # file itself, raw on purpose.
+        "iocs": [
+            ioc.model_copy(update={"defanged": _mask(result).indicator(ioc)})
+            for ioc in result.iocs
+            if ioc.found_in(entry.url)
+        ],
         "referenced_by": [
             other
             for other in result.files
@@ -211,16 +293,69 @@ def _preview(
     }
 
 
-def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
+#: The live values and the secret mask of the run drawn last, so a page with a
+#: hundred context lines walks the run's indicators once and not a hundred times.
+_shown_cache: tuple[object, list[str], SecretMask] = (None, [], SecretMask([]))
+
+
+def _shown_for(result: ScanResult) -> tuple[list[str], SecretMask]:
+    global _shown_cache
+    cached, values, mask = _shown_cache
+    if cached is not result:
+        values, mask = detections.live_values(result), SecretMask(result.iocs)
+        _shown_cache = (result, values, mask)
+    return values, mask
+
+
+def _mask(result: ScanResult) -> SecretMask:
+    return _shown_for(result)[1]
+
+
+def defang_shown(text: str | None, result: ScanResult) -> str:
+    """A line from the target's own files, made safe to show on the run page.
+
+    Context lines were defanged with the rules of the day the run was saved,
+    so an older run can carry a live address in one. This defangs at display
+    time with every live value the run holds plus the prose pass, so old and
+    new runs read the same. A secret is named by its kind, length and digest,
+    never quoted. The saved run is not changed.
+    """
+    if not text:
+        return ""
+    values, mask = _shown_for(result)
+    return detections.defang_with(mask.text(text), values)
+
+
+def create_app(
+    runs_dir: Path = Path("runs"),
+    lookup=lookup_hash,
+    *,
+    allowed_hosts: tuple[str, ...] | list[str] | set[str] | None = None,
+) -> FastAPI:
     runs_dir = Path(runs_dir)
     runs_dir.mkdir(parents=True, exist_ok=True)
 
+    # Every Host the console will answer to: loopback plus whatever address it
+    # was bound to. A request arriving under any other Host is a rebinding
+    # attempt and never reaches a route.
+    allowed = set(LOOPBACK_HOSTS)
+    if allowed_hosts:
+        allowed.update(h.strip() for h in allowed_hosts if h and h.strip())
+
     app = FastAPI(title="DirSift", docs_url=None, redoc_url=None)
+
+    @app.middleware("http")
+    async def only_local_host(request: Request, call_next):
+        if host_name(request.headers.get("host", "")) not in allowed:
+            return PlainTextResponse(BAD_HOST, status_code=400)
+        return await call_next(request)
+
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     templates.env.filters["human_size"] = human_size
     templates.env.filters["defang"] = defang
     templates.env.filters["explain"] = explain
+    templates.env.filters["defang_shown"] = defang_shown
     jobs = JobStore()
 
     # The address table is half a million ranges and takes a few seconds to
@@ -229,7 +364,7 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     # machine without the table gets an empty one back immediately.
     threading.Thread(target=default_table, daemon=True, name="asn-warm").start()
 
-    # -- helpers -----------------------------------------------------------
+    # Helpers
 
     def list_runs() -> list[dict[str, object]]:
         out = []
@@ -264,6 +399,96 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             raise NoSuchRun(name) from exc
         return analyze(result)
 
+    sidecar_lock = threading.Lock()
+
+    def sidecar_of(name: str) -> Path:
+        return runs_dir / "assessments" / f"{name}.json"
+
+    def read_sidecar(name: str) -> tuple[dict, str | None]:
+        """The saved assessment and, when the file is broken, why; never an exception."""
+        try:
+            return assess.load(sidecar_of(name)), None
+        except assess.AssessmentError as exc:
+            return {}, assess.UNREADABLE.format(detail=str(exc))
+
+    def report_for(name: str, tlp: str | None):
+        """The report model for a run, with the TLP picked as explicit, saved, AMBER."""
+        try:
+            loaded = load_run_for_report(run_path(name))
+        except (OSError, ValueError) as exc:
+            raise NoSuchRun(name) from exc
+        saved, _ = read_sidecar(name)
+        level = tlp or saved.get("tlp") or report_text.DEFAULT_TLP
+        options = ReportOptions(run_name=name, tlp=level, asn_recorded=loaded.asn_recorded)
+        return build_report(loaded.result, loaded.candidates, options, saved, None,
+                            loaded.run_sha256, loaded.siblings)
+
+    def asked_tlp(tlp: str | None) -> str | None:
+        if tlp is None or tlp == "":
+            return None
+        label = normalise_tlp(tlp)
+        if label is None:
+            raise BadTlp()
+        return label
+
+    def report_context(name: str) -> dict:
+        saved, error = read_sidecar(name)
+        saved_tlp = saved.get("tlp") or None
+        return {
+            "name": name,
+            "md_url": f"/runs/{name}/report.md",
+            "pdf_url": f"/runs/{name}/report.pdf",
+            "assessment_url": f"/runs/{name}/assessment",
+            "pdf_filename": f"dirsift_{name}_report.pdf",
+            "md_filename": f"dirsift_{name}_report.md",
+            "default_tlp": report_text.DEFAULT_TLP,
+            "saved_tlp": saved_tlp,
+            "selected_tlp": saved_tlp or report_text.DEFAULT_TLP,
+            "tlp_levels": assess.tlp_levels(),
+            "downgrade_warning": report_text.TLP_DOWNGRADE,
+            "assessment": assess.form_context(name, saved, sidecar_error=error),
+        }
+
+    def same_origin(request: Request) -> bool:
+        """Whether a state-changing request came from a page this console served.
+
+        A browser attaches Origin and Sec-Fetch-Site to every cross-origin POST
+        and a script cannot strip them, so a request that carries neither Origin
+        nor Referer is a local non-browser client (the operator's own curl or a
+        script on loopback), which is allowed; anything with an origin must
+        match the Host it arrived on. The Host allow list closes the
+        DNS-rebinding path, so this needs no CSRF token and a JS-off form, which
+        the browser still sends an Origin with on a same-origin POST, keeps
+        working.
+        """
+        if request.headers.get("sec-fetch-site", "") == "cross-site":
+            return False
+        host = request.headers.get("host", "")
+        origin = request.headers.get("origin")
+        if origin == "null":
+            return False
+        if origin:
+            return origin.split("://", 1)[-1].rstrip("/") == host
+        referer = request.headers.get("referer")
+        if referer:
+            return referer.split("://", 1)[-1].split("/", 1)[0] == host
+        return True
+
+    def cross_origin_refusal() -> PlainTextResponse:
+        return PlainTextResponse(CROSS_ORIGIN_REFUSAL, status_code=403)
+
+    def is_htmx(request: Request) -> bool:
+        """htmx marks its own requests, so a 404 from one of them can land in the
+        preview panel instead of replacing the whole page."""
+        return bool(request.headers.get("hx-request"))
+
+    def render_error(request: Request, context: dict, status_code: int):
+        """A full-page error, drawn through base.html so the language, the title,
+        the single h1 and the main landmark are there without a bare response."""
+        return templates.TemplateResponse(
+            request, "error.html", context, status_code=status_code
+        )
+
     def run_scan(job: Job, options: ScanOptions) -> None:
         def progress(event: str, detail: str) -> None:
             job.stage, job.detail = event, detail
@@ -287,7 +512,7 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             job.state = "failed"
             job.error = _failure_message(exc)
 
-    # -- routes ------------------------------------------------------------
+    # Routes
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
@@ -311,6 +536,8 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     @app.post("/verdict", response_class=HTMLResponse)
     def hash_verdict(request: Request, digest: str = DIGEST_IN_FORM):
         """Ask about a digest that arrived from somewhere other than a scan."""
+        if not same_origin(request):
+            return cross_origin_refusal()
         digest = digest.strip().lower()
         verdict = None
         note = None
@@ -329,12 +556,15 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
 
     @app.post("/scan")
     def start_scan(
+        request: Request,
         url: str = Form(...),
         depth: int = Form(2),
         delay: float = Form(1.0),
         peek: bool = Form(False),
         allow_private: bool = Form(False),
     ):
+        if not same_origin(request):
+            return cross_origin_refusal()
         job = jobs.create(url.strip())
         options = ScanOptions(
             depth=depth, delay=delay, peek=peek, allow_private=allow_private
@@ -352,21 +582,29 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     def job_page(request: Request, job_id: str):
         job = jobs.get(job_id)
         if job is None:
-            return HTMLResponse("<h1>no such job</h1>", status_code=404)
+            return render_error(request, ERROR_NO_SUCH_JOB, status_code=404)
         return templates.TemplateResponse(request, "job.html", {"job": job})
 
     @app.get("/jobs/{job_id}/status", response_class=HTMLResponse)
     def job_status(request: Request, job_id: str):
         job = jobs.get(job_id)
         if job is None:
-            return HTMLResponse("gone", status_code=404)
+            # The polling box asked after the job was gone (the console
+            # restarted). The fragment carries no trigger, so the swap stops the
+            # polling, and it lands in the live region so it is announced.
+            return templates.TemplateResponse(
+                request, "_status_gone.html", {}, status_code=404
+            )
         return templates.TemplateResponse(request, "_status.html", {"job": job})
 
     @app.get("/runs/{name}", response_class=HTMLResponse)
-    def run_page(request: Request, name: str, file: str | None = None):
+    def run_page(
+        request: Request, name: str, file: str | None = None, tab: str | None = None
+    ):
         result, candidates = load_run(name)
         entries = sorted(result.entries, key=lambda e: (e.depth, not e.is_dir, e.name))
         opened = next((e for e in result.entries if e.url == file), None) if file else None
+        drivers = [c for c in candidates if c.score > 0]
         ioc_types: dict[str, int] = {}
         for ioc in result.iocs:
             ioc_types[ioc.ioc_type] = ioc_types.get(ioc.ioc_type, 0) + 1
@@ -376,7 +614,14 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             {
                 "name": name,
                 "result": result,
-                "candidates": [c for c in candidates if c.score > 0][:6],
+                # A ?file= link means a preview, and the preview lives in the
+                # files panel. Force files so the preview is never stranded in a
+                # hidden panel (on a narrow screen that would lock the page).
+                "tab": "files" if file else (tab if tab in RUN_TABS else RUN_TABS[0]),
+                "candidates": drivers[:6],
+                # Every scored file, for the badge on its listing row. The strip
+                # shows a short list; the badges are not held to it.
+                "driver_scores": {c.entry.url: int(round(c.score)) for c in drivers},
                 "entries": entries,
                 "by_kind": sorted(result.by_kind().items(), key=lambda kv: -len(kv[1])),
                 "ioc_types": sorted(ioc_types.items(), key=lambda kv: -kv[1]),
@@ -386,7 +631,16 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
                     if (note := mismatch(entry)) is not None
                 },
                 "preview": _preview(result, opened, name) if opened else None,
+                "report_ctx": report_context(name),
             },
+        )
+
+    def not_in_run(request: Request, name: str, url: str):
+        """The panel a preview, a verdict or a comparison gets for a file the run
+        never listed. It lands in the preview (a sheet on a narrow screen), so it
+        reads like one: a heading, the address, a way back. Still a 404."""
+        return templates.TemplateResponse(
+            request, "_missing.html", {"name": name, "url": url}, status_code=404
         )
 
     @app.get("/runs/{name}/file", response_class=HTMLResponse)
@@ -394,16 +648,18 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
         result, _ = load_run(name)
         entry = next((e for e in result.entries if e.url == url), None)
         if entry is None:
-            return HTMLResponse("<p>not in this run</p>", status_code=404)
+            return not_in_run(request, name, url)
         return templates.TemplateResponse(request, "_file.html", _preview(result, entry, name))
 
     @app.post("/runs/{name}/verdict", response_class=HTMLResponse)
     def file_verdict(request: Request, name: str, url: str):
         """Ask a public scanner about one hash, on purpose, one file at a time."""
+        if not same_origin(request):
+            return cross_origin_refusal()
         result, _ = load_run(name)
         entry = next((e for e in result.entries if e.url == url), None)
         if entry is None:
-            return HTMLResponse("<p>not in this run</p>", status_code=404)
+            return not_in_run(request, name, url)
 
         note = None
         if not entry.sha256:
@@ -431,6 +687,8 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
     @app.post("/runs/{name}/yara", response_class=HTMLResponse)
     def build_yara(request: Request, name: str, pick: list[str] = PICKED_IN_FORM):
         """A rule from the files someone ticked in the listing."""
+        if not same_origin(request):
+            return cross_origin_refusal()
         result, _ = load_run(name)
         picked = _picked(result, pick)
         return templates.TemplateResponse(
@@ -454,6 +712,280 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
             headers={"Content-Disposition": 'attachment; filename="' + name + '.yar"'},
         )
 
+    # Detections
+    #
+    # Every route here reads the saved run and writes nothing. The preview is
+    # defanged; only download and the zip carry live values, and both are sent
+    # as attachments so a browser saves them instead of showing them.
+
+    def detection_options(
+        result: ScanResult,
+        tlp: str | None,
+        types: list[str],
+        source: str | None,
+        exclude_private: bool,
+        exclude_protocol: bool,
+        profile: str | None,
+        pick: list[str],
+    ) -> detections.Options:
+        """The export options from the query. Raises BadOption or LookupError."""
+        source = source or None
+        if source is not None and not any(entry.url == source for entry in result.files):
+            raise LookupError(source)
+        wanted = set(pick)
+        return detections.Options(
+            tlp=detections.parse_tlp(tlp),
+            types=detections.parse_types(types, detections.SHAREABLE),
+            source=source,
+            exclude_private=exclude_private,
+            exclude_protocol=exclude_protocol,
+            profile=detections.parse_profile(profile),
+            pick=tuple(entry.url for entry in result.files if entry.url in wanted),
+        )
+
+    def options_query(options: detections.Options) -> str:
+        pairs: list[tuple[str, str]] = [("tlp", options.tlp)]
+        for kind in sorted(options.types or ()):
+            pairs.append(("types", kind))
+        if options.source:
+            pairs.append(("source", options.source))
+        pairs.append(("exclude_private", "true" if options.exclude_private else "false"))
+        pairs.append(("exclude_protocol", "true" if options.exclude_protocol else "false"))
+        pairs.append(("profile", options.profile))
+        for url in options.pick:
+            pairs.append(("pick", url))
+        return urlencode(pairs)
+
+    def detection_context(
+        name: str, result: ScanResult, candidates, options: detections.Options
+    ) -> dict:
+        run = detections.Run(result=result, name=name, candidates=tuple(candidates))
+        info = detections.summary(run, options)
+        query = options_query(options)
+        for target in info["targets"]:
+            base = f"/runs/{name}/detections/{target['id']}"
+            target["preview_url"] = f"{base}?{query}"
+            target["download_url"] = f"{base}/download?{query}"
+        # The type and file filters count over the whole run, so narrowing to
+        # one type or one file never hides the others from the controls.
+        everything = detections.collect(result, replace(options, source=None, types=None))
+        per_path: dict[str, int] = {}
+        for item in everything.indicators:
+            for path in item.sources:
+                per_path[path] = per_path.get(path, 0) + 1
+        sources = []
+        for entry in sorted(result.files, key=lambda e: e.url):
+            path = unquote(entry.url.removeprefix(result.root_url)) or entry.name
+            if per_path.get(path):
+                sources.append({"url": entry.url, "path": path, "count": per_path[path]})
+        return {
+            "name": name,
+            "run": run,
+            "options": {
+                "tlp": options.tlp,
+                "types": sorted(options.types) if options.types is not None else None,
+                "source": options.source,
+                "exclude_private": options.exclude_private,
+                "exclude_protocol": options.exclude_protocol,
+                "profile": options.profile,
+            },
+            "tlp_levels": list(detections.TLP_LEVELS),
+            "types": everything.counts(),
+            "left_out": info["left_out"],
+            "sources": sources,
+            "targets": info["targets"],
+            "zip_url": f"/runs/{name}/detections.zip?{query}",
+        }
+
+    def bad_option(exc: Exception):
+        return PlainTextResponse(str(exc) + ".", status_code=400)
+
+    def no_target():
+        return PlainTextResponse("No such detection target.", status_code=404)
+
+    def asked(request: Request, name: str, result: ScanResult, query: dict):
+        """Options from the query, or the response that refuses them."""
+        try:
+            return detection_options(result, **query), None
+        except detections.BadOption as exc:
+            return None, bad_option(exc)
+        except LookupError:
+            return None, not_in_run(request, name, query.get("source") or "")
+
+    @app.get("/runs/{name}/detections.json")
+    def detections_list(
+        request: Request,
+        name: str,
+        tlp: str | None = None,
+        types: list[str] = TYPES_IN_QUERY,
+        source: str | None = None,
+        exclude_private: bool = True,
+        exclude_protocol: bool = True,
+        profile: str | None = None,
+        pick: list[str] = PICKED_IN_QUERY,
+    ):
+        """The targets and their counts, for scripts and for the panel's own tests."""
+        result, candidates = load_run(name)
+        options, refusal = asked(request, name, result, {
+            "tlp": tlp, "types": types, "source": source, "exclude_private": exclude_private,
+            "exclude_protocol": exclude_protocol, "profile": profile, "pick": pick,
+        })
+        if refusal is not None:
+            return refusal
+        context = detection_context(name, result, candidates, options)
+        context.pop("run")
+        return JSONResponse({"run": context.pop("name"), **context})
+
+    @app.get("/runs/{name}/detections", response_class=HTMLResponse)
+    def detections_panel(
+        request: Request,
+        name: str,
+        tlp: str | None = None,
+        types: list[str] = TYPES_IN_QUERY,
+        source: str | None = None,
+        exclude_private: bool = True,
+        exclude_protocol: bool = True,
+        profile: str | None = None,
+        pick: list[str] = PICKED_IN_QUERY,
+    ):
+        """The rule pack panel: targets, counts, filters, and what was left out."""
+        result, candidates = load_run(name)
+        options, refusal = asked(request, name, result, {
+            "tlp": tlp, "types": types, "source": source, "exclude_private": exclude_private,
+            "exclude_protocol": exclude_protocol, "profile": profile, "pick": pick,
+        })
+        if refusal is not None:
+            return refusal
+        context = detection_context(name, result, candidates, options)
+        context.pop("run")
+        if is_htmx(request):
+            return templates.TemplateResponse(request, "_detections.html", context)
+        # Without the script the run page links here and the filter form
+        # submits here, so a plain request gets a whole page around the panel.
+        context["root"] = defang(result.root_url)
+        return templates.TemplateResponse(request, "detections_page.html", context)
+
+    @app.get("/runs/{name}/detections.zip")
+    def detections_zip(
+        request: Request,
+        name: str,
+        tlp: str | None = None,
+        types: list[str] = TYPES_IN_QUERY,
+        source: str | None = None,
+        exclude_private: bool = True,
+        exclude_protocol: bool = True,
+        profile: str | None = None,
+        pick: list[str] = PICKED_IN_QUERY,
+        targets: str | None = None,
+    ):
+        """Every target in one archive, live, with a manifest."""
+        result, candidates = load_run(name)
+        options, refusal = asked(request, name, result, {
+            "tlp": tlp, "types": types, "source": source, "exclude_private": exclude_private,
+            "exclude_protocol": exclude_protocol, "profile": profile, "pick": pick,
+        })
+        if refusal is not None:
+            return refusal
+        if targets:
+            wanted = [part.strip() for part in targets.split(",") if part.strip()]
+            if any(part not in detections.TARGETS for part in wanted):
+                return no_target()
+            chosen = [detections.TARGETS[part] for part in wanted]
+        else:
+            chosen = list(detections.TARGETS.values())
+        run = detections.Run(result=result, name=name, candidates=tuple(candidates))
+        return Response(
+            detections.zip_bytes(run, options, chosen),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{detections.zip_name(run)}"',
+                **LIVE_HEADERS,
+            },
+        )
+
+    @app.get("/runs/{name}/detections/{target}", response_class=HTMLResponse)
+    def detection_preview(
+        request: Request,
+        name: str,
+        target: str,
+        tlp: str | None = None,
+        types: list[str] = TYPES_IN_QUERY,
+        source: str | None = None,
+        exclude_private: bool = True,
+        exclude_protocol: bool = True,
+        profile: str | None = None,
+        pick: list[str] = PICKED_IN_QUERY,
+        format: str | None = None,  # noqa: A002 - the public name of the query field
+    ):
+        """One target, defanged. HTML for the panel, or text with format=text."""
+        result, candidates = load_run(name)
+        chosen = detections.TARGETS.get(target)
+        if chosen is None:
+            return no_target()
+        options, refusal = asked(request, name, result, {
+            "tlp": tlp, "types": types, "source": source, "exclude_private": exclude_private,
+            "exclude_protocol": exclude_protocol, "profile": profile, "pick": pick,
+        })
+        if refusal is not None:
+            return refusal
+        context = detection_context(name, result, candidates, options)
+        run = context.pop("run")
+        text = detections.preview(chosen, run, options)
+        if format == "text":
+            return PlainTextResponse(text, headers={"Cache-Control": "no-store"})
+        record = next(item for item in context["targets"] if item["id"] == target)
+        note = None
+        if chosen.needs_pick and not options.pick:
+            note = "Pick files in the listing to build rules from."
+        return templates.TemplateResponse(
+            request,
+            "_detection.html",
+            {
+                "name": name,
+                "target": record,
+                "preview": text,
+                "options": context["options"],
+                "left_out": record["left_out"],
+                "assumes": record["assumes"],
+                "empty": record["count"] == 0 and not chosen.needs_pick,
+                "note": note,
+            },
+        )
+
+    @app.get("/runs/{name}/detections/{target}/download")
+    def detection_download(
+        request: Request,
+        name: str,
+        target: str,
+        tlp: str | None = None,
+        types: list[str] = TYPES_IN_QUERY,
+        source: str | None = None,
+        exclude_private: bool = True,
+        exclude_protocol: bool = True,
+        profile: str | None = None,
+        pick: list[str] = PICKED_IN_QUERY,
+    ):
+        """One target as the file itself: live values, saved rather than shown."""
+        result, candidates = load_run(name)
+        chosen = detections.TARGETS.get(target)
+        if chosen is None:
+            return no_target()
+        options, refusal = asked(request, name, result, {
+            "tlp": tlp, "types": types, "source": source, "exclude_private": exclude_private,
+            "exclude_protocol": exclude_protocol, "profile": profile, "pick": pick,
+        })
+        if refusal is not None:
+            return refusal
+        run = detections.Run(result=result, name=name, candidates=tuple(candidates))
+        return Response(
+            detections.render(chosen, run, options),
+            media_type=chosen.media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{detections.filename(run, chosen)}"',
+                **LIVE_HEADERS,
+            },
+        )
+
     @app.get("/runs/{name}/diff", response_class=HTMLResponse)
     def file_diff(request: Request, name: str, a: str, b: str):
         """Two versions of the same artefact, side by side in one panel."""
@@ -461,7 +993,7 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
         left = next((e for e in result.entries if e.url == a), None)
         right = next((e for e in result.entries if e.url == b), None)
         if left is None or right is None:
-            return HTMLResponse("<p>not in this run</p>", status_code=404)
+            return not_in_run(request, name, a if left is None else b)
         return templates.TemplateResponse(
             request,
             "_diff.html",
@@ -469,14 +1001,88 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
         )
 
     @app.get("/runs/{name}/report.md", response_class=PlainTextResponse)
-    def run_markdown(name: str):
-        result, candidates = load_run(name)
-        return render_markdown(result, candidates)
+    def run_markdown(
+        name: str, tlp: str | None = None, logo: str = "inline", download: str | None = None
+    ):
+        level = asked_tlp(tlp)
+        if logo not in LOGO_MODES:
+            return PlainTextResponse("The logo option takes inline or none.", status_code=400)
+        text = render_markdown(report_for(name, level), logo=logo)
+        headers = {}
+        if download:
+            headers["Content-Disposition"] = (
+                f'attachment; filename="dirsift_{name}_report.md"'
+            )
+        return PlainTextResponse(text, headers=headers)
+
+    @app.get("/runs/{name}/report.pdf")
+    def run_pdf(name: str, tlp: str | None = None):
+        level = asked_tlp(tlp)
+        data = render_pdf(report_for(name, level))
+        return Response(
+            data,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="dirsift_{name}_report.pdf"',
+                **LIVE_HEADERS,
+            },
+        )
+
+    @app.get("/runs/{name}/assessment", response_class=HTMLResponse)
+    def assessment_form(request: Request, name: str):
+        run_path(name)
+        if not run_path(name).exists():
+            raise NoSuchRun(name)
+        saved, error = read_sidecar(name)
+        return templates.TemplateResponse(
+            request, "_assessment.html", assess.form_context(name, saved, sidecar_error=error)
+        )
+
+    @app.post("/runs/{name}/assessment")
+    async def assessment_save(request: Request, name: str):
+        path = run_path(name)
+        if not same_origin(request):
+            return cross_origin_refusal()
+        if not path.exists():
+            raise NoSuchRun(name)
+        form = {key: str(value) for key, value in (await request.form()).items()}
+        with sidecar_lock:
+            saved, error = read_sidecar(name)
+            try:
+                run_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+            except OSError as exc:
+                raise NoSuchRun(name) from exc
+            result = assess.apply_form(saved, form, run_sha)
+            if result.ok and result.changed:
+                assess.save(sidecar_of(name), result.data)
+        status = 200 if result.ok else (409 if result.conflict else 422)
+        context = assess.form_context(name, result.data, result=result,
+                                      sidecar_error=error if not result.ok else None)
+        if "application/json" in request.headers.get("accept", ""):
+            return JSONResponse(
+                {
+                    "ok": result.ok,
+                    "revision": context["revision"],
+                    "version": context["version"],
+                    "changed": result.changed,
+                    "errors": result.errors,
+                    "missing": result.missing,
+                    "invalid": result.invalid,
+                    "conflict": result.conflict,
+                },
+                status_code=status,
+            )
+        if result.ok and not is_htmx(request):
+            return RedirectResponse(f"/runs/{name}#assessment", status_code=303)
+        return templates.TemplateResponse(
+            request, "_assessment.html", context, status_code=status
+        )
 
     @app.get("/runs/{name}/iocs.txt", response_class=PlainTextResponse)
     def run_iocs(name: str):
         result, _ = load_run(name)
-        return "\n".join(ioc.defanged for ioc in result.iocs)
+        mask = SecretMask(result.iocs)
+        return "\n".join(mask.indicator(ioc) for ioc in result.iocs)
 
     @app.get("/runs/{name}/hashes.txt", response_class=PlainTextResponse)
     def run_hashes(name: str):
@@ -490,13 +1096,29 @@ def create_app(runs_dir: Path = Path("runs"), lookup=lookup_hash) -> FastAPI:
         ]
         return "\n".join(rows)
 
+    @app.exception_handler(BadTlp)
+    def bad_tlp(request: Request, exc: BadTlp):
+        return PlainTextResponse(report_text.TLP_UNKNOWN, status_code=400)
+
     @app.exception_handler(NoSuchRun)
     def no_such_run(request: Request, exc: NoSuchRun):
-        return HTMLResponse("<h1>no such run</h1>", status_code=404)
+        # The same miss reaches here two ways: a preview, a verdict or a compare
+        # fetched over htmx (the panel lands in the preview, a sheet on a narrow
+        # screen), or a direct visit to the run page. The name is never echoed,
+        # so a name that is not a run name reads the same as one that is gone.
+        if is_htmx(request):
+            return templates.TemplateResponse(
+                request, "_gone_run.html", {}, status_code=404
+            )
+        return render_error(request, ERROR_NO_SUCH_RUN, status_code=404)
 
     @app.exception_handler(ScopeError)
     def scope_error(request: Request, exc: ScopeError):
         # The message quotes a URL a target's listing supplied: hostile input.
-        return HTMLResponse(f"<h1>refused</h1><p>{escape(str(exc))}</p>", status_code=400)
+        # It is passed raw; the template's autoescape quotes it once, so there is
+        # no second escape to turn the markup back into visible text twice.
+        return render_error(
+            request, {**ERROR_REFUSED, "quote": str(exc)}, status_code=400
+        )
 
     return app

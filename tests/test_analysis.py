@@ -13,7 +13,7 @@ def entry(name: str, **kw) -> Entry:
     return Entry(url=f"http://example.test/files/{name}", name=name, **kw)
 
 
-# -- classify --------------------------------------------------------------
+# Classify
 
 
 def test_magic_beats_extension():
@@ -50,7 +50,7 @@ def test_sniff_reads_tar_magic_at_offset():
     assert sniff(b"\x00" * 257 + b"ustar")[0] is Kind.ARCHIVE
 
 
-# -- cluster ---------------------------------------------------------------
+# Cluster
 
 
 def test_numeric_family_keeps_the_gap_visible():
@@ -87,7 +87,7 @@ def test_unrelated_names_do_not_cluster():
     assert find_clusters([entry("readme.txt"), entry("config.json")]) == []
 
 
-# -- glue ------------------------------------------------------------------
+# Glue
 
 
 def test_the_driver_script_outranks_everything_else():
@@ -117,7 +117,7 @@ def test_binaries_are_never_glue_candidates():
     assert score_glue(files) == []
 
 
-# -- extract ---------------------------------------------------------------
+# Extract
 
 
 def test_defanged_and_live_forms_dedupe_to_one_indicator():
@@ -176,7 +176,7 @@ def test_defang_text_leaves_prose_alone():
     assert defang_text("nothing here") == "nothing here"
 
 
-# -- indicators seen in more than one file ---------------------------------
+# Indicators seen in more than one file
 
 
 def test_a_deduplicated_indicator_remembers_every_file_it_came_from():

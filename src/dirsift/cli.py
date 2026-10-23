@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
 
@@ -11,15 +13,18 @@ import httpx
 import typer
 from pydantic import ValidationError
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
+from . import assessment as assess
+from . import detections, report_text
 from .analyze import analyze
 from .asn import ENV_PATH, AsnTable, default_table
 from .banner import banner
 from .diagnose import explain
 from .diff import diff_runs, render_diff_markdown
 from .enrich import MissingKey, api_key_from_env, lookup_hash
-from .extract import defang
+from .extract import SecretMask, defang
 from .fetcher import ScopeError
 from .models import ScanResult
 from .pivots import (
@@ -31,7 +36,15 @@ from .pivots import (
     render_pivots_plain,
     select,
 )
-from .report import human_size, network_note, render_markdown
+from .report import LOGO_MODES, human_size, network_note, render_markdown
+from .report_model import (
+    ReportOptions,
+    build_report,
+    load_run_for_report,
+    normalise_tlp,
+    sibling_runs,
+)
+from .report_pdf import render_pdf
 from .rules import build_rules
 from .stix import build_bundle, bundle_json, left_out
 from .walker import ScanOptions, scan
@@ -66,7 +79,9 @@ console = Console()
 err = Console(stderr=True)
 
 
-def _write(path: Path, text: str, label: str, *, say: Console | None = None) -> None:
+def _write(
+    path: Path, text: str, label: str, *, say: Console | None = None, newline: str | None = None
+) -> None:
     """Write a result, making the folder it was told to write into.
 
     The line saying where it went is printed on ``say``, stdout unless told
@@ -75,7 +90,7 @@ def _write(path: Path, text: str, label: str, *, say: Console | None = None) -> 
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text, encoding="utf-8", newline=newline)
     except OSError as exc:
         err.print(f"[red]could not write[/] {path}: {exc.strerror}")
         raise typer.Exit(code=2) from None
@@ -123,12 +138,14 @@ def _summary(result: ScanResult, candidates) -> None:
 
     if result.iocs:
         console.print(f"[bold]indicators[/] [dim]({len(result.iocs)} unique, defanged)[/]")
+        mask = SecretMask(result.iocs)
         for ioc in result.iocs[:12]:
             # Square brackets would be eaten as rich markup here.
             label = f" [dim]({ioc.label})[/]" if ioc.label else ""
             network = network_note(ioc.asn, ioc.as_name, ioc.country)
             where = f" [dim]{network}[/]" if network else ""
-            console.print(f"  [magenta]{ioc.ioc_type:<9}[/] {ioc.defanged}{label}{where}")
+            shown = escape(mask.indicator(ioc))
+            console.print(f"  [magenta]{ioc.ioc_type:<9}[/] {shown}{label}{where}")
         if len(result.iocs) > 12:
             console.print(f"  [dim]+{len(result.iocs) - 12} more, see the report[/]")
         console.print()
@@ -174,7 +191,8 @@ def scan_cmd(
     ] = 600,
     timeout: Annotated[float, typer.Option("--timeout", help="Per-request timeout.")] = 20.0,
     out: Annotated[
-        Path | None, typer.Option("--out", "-o", help="Write the markdown report here.")
+        Path | None,
+        typer.Option("--out", "-o", help="Write the report here: .md or .pdf by the extension."),
     ] = None,
     save_json: Annotated[
         Path | None, typer.Option("--json", help="Save the raw run for later re-analysis.")
@@ -192,6 +210,8 @@ def scan_cmd(
 ) -> None:
     """Walk an open directory and triage what is in it."""
     banner(f"scan | depth {depth} | {delay}s between requests")
+    # Checked before the walk: a typo in the file name should not cost a scan.
+    report_format = _report_format(out) if out else None
 
     def progress(event: str, detail: str) -> None:
         if not quiet:
@@ -234,27 +254,149 @@ def scan_cmd(
         _write(save_json, result.model_dump_json(indent=2), "run saved")
 
     if out:
-        _write(out, render_markdown(result, candidates), "report written")
+        if save_json:
+            sha = hashlib.sha256(save_json.read_bytes()).hexdigest()
+            options = ReportOptions(run_name=save_json.stem, asn_recorded=bool(result.asn_source))
+            siblings = sibling_runs(save_json.parent, result.root_url)
+        else:
+            sha, options, siblings = None, ReportOptions(), ()
+        err.print(f"[dim]{report_text.TLP_NOT_SET}[/]", highlight=False)
+        report = build_report(result, candidates, options, None, None, sha, siblings)
+        _write_report(out, report_format, report, "inline")
+
+
+REPORT_SUFFIXES = {".md": "md", ".markdown": "md", ".pdf": "pdf"}
+
+
+def _report_format(out: Path) -> str:
+    """The report format the file name asks for, or an exit that says which exist."""
+    fmt = REPORT_SUFFIXES.get(out.suffix.lower())
+    if fmt is None:
+        err.print(
+            f"[red]{escape(out.name)}:[/] a report is written as Markdown (.md) or PDF (.pdf); "
+            "the file name decides which.",
+            highlight=False,
+        )
+        raise typer.Exit(code=2)
+    return fmt
+
+
+def _write_report(out: Path, fmt: str, report, logo: str) -> None:
+    if fmt == "pdf":
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(render_pdf(report))
+        except OSError as exc:
+            err.print(f"[red]could not write[/] {out}: {exc.strerror}")
+            raise typer.Exit(code=2) from None
+        console.print(f"[green]report written[/] {out}")
+    else:
+        _write(out, render_markdown(report, logo=logo), "report written", newline="\n")
 
 
 @app.command("report")
 def report_cmd(
     run: Annotated[Path, typer.Argument(help="A run saved with --json.")],
     out: Annotated[
-        Path | None, typer.Option("--out", "-o", help="Write here instead of stdout.")
+        Path | None,
+        typer.Option(
+            "--out", "-o",
+            help="Write here: .md or .pdf by the extension. Without it, Markdown on stdout.",
+        ),
     ] = None,
+    tlp: Annotated[
+        str | None,
+        typer.Option(
+            "--tlp",
+            help="CLEAR, GREEN, AMBER, AMBER+STRICT or RED. Default: the saved one, else AMBER.",
+        ),
+    ] = None,
+    author: Annotated[
+        str | None,
+        typer.Option("--author", help="The analyst named in the report. Not saved anywhere."),
+    ] = None,
+    assessment_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--assessment",
+            help="Assessment file. Default: assessments/<run file name> beside the run.",
+        ),
+    ] = None,
+    logo: Annotated[
+        str, typer.Option("--logo", help="inline (default) or none: leave the mark out.")
+    ] = "inline",
     scaffold: Annotated[
-        bool, typer.Option("--scaffold/--no-scaffold", help="Include the writeup scaffold.")
-    ] = True,
+        bool | None, typer.Option("--scaffold/--no-scaffold", hidden=True)
+    ] = None,
 ) -> None:
-    """Re-render a saved run. Touches nothing on the network."""
+    """Write the triage report for a saved run. Touches nothing on the network."""
     banner(f"report | {run.name}")
-    result, candidates = _load(run)
-    markdown = render_markdown(result, candidates, scaffold=scaffold)
+    if scaffold is not None:
+        err.print(
+            "[yellow]The writeup scaffold is gone and this flag does nothing; the Analyst "
+            "assessment section takes its place.[/]",
+            highlight=False,
+        )
+    if logo not in LOGO_MODES:
+        err.print(f"[red]The logo option takes {' or '.join(LOGO_MODES)}.[/]", highlight=False)
+        raise typer.Exit(code=2)
+    fmt = _report_format(out) if out else "md"
+    chosen = None
+    if tlp is not None:
+        chosen = normalise_tlp(tlp)
+        if chosen is None:
+            err.print(f"[red]{report_text.TLP_UNKNOWN}[/]", highlight=False)
+            raise typer.Exit(code=2)
+
+    loaded = _load_for_report(run)
+    sidecar = assessment_file or assess.sidecar_path(run)
+    if assessment_file is not None and not assessment_file.exists():
+        err.print(f"[red]No assessment file at[/] {escape(str(assessment_file))}",
+                  highlight=False)
+        raise typer.Exit(code=1)
+    try:
+        saved = assess.load(sidecar)
+    except assess.AssessmentError as exc:
+        err.print(
+            f"[red]Assessment file {escape(str(sidecar))} is not valid:[/] {escape(str(exc))}",
+            highlight=False,
+        )
+        raise typer.Exit(code=1) from None
+
+    saved_tlp = saved.get("tlp") or None
+    if chosen is None and saved_tlp is None:
+        err.print(f"[dim]{report_text.TLP_NOT_SET}[/]", highlight=False)
+    if chosen is not None:
+        warning = assess.downgrade_warning(chosen, saved_tlp)
+        if warning:
+            err.print(f"[yellow]{escape(warning)}[/]", highlight=False)
+    level = chosen or saved_tlp or report_text.DEFAULT_TLP
+
+    options = ReportOptions(run_name=loaded.name, tlp=level, author=author,
+                            asn_recorded=loaded.asn_recorded)
+    report = build_report(loaded.result, loaded.candidates, options, saved, None,
+                          loaded.run_sha256, loaded.siblings)
     if out:
-        _write(out, markdown, "report written")
+        _write_report(out, fmt, report, logo)
     else:
-        sys.stdout.write(markdown)
+        sys.stdout.write(render_markdown(report, logo=logo))
+
+
+def _load_for_report(run: Path):
+    """A saved run with what the report states about the file; failures in a sentence."""
+    try:
+        return load_run_for_report(run)
+    except FileNotFoundError:
+        console.print(f"[bold]No run at[/bold] {escape(str(run))}")
+        console.print("[dim]A run is written by scan with --json. Check the path.[/dim]")
+        raise typer.Exit(code=2) from None
+    except OSError as exc:
+        err.print(f"[bold]Cannot read[/bold] {escape(str(run))}: {exc.strerror}")
+        raise typer.Exit(code=2) from None
+    except (ValueError, ValidationError) as exc:
+        err.print(f"[bold]{escape(str(run))} is not a run DirSift wrote.[/bold]")
+        err.print(f"[dim]{type(exc).__name__}: {escape(str(exc).splitlines()[0])}[/dim]")
+        raise typer.Exit(code=2) from None
 
 
 @app.command("diff")
@@ -301,19 +443,25 @@ def iocs_cmd(
         ),
     ] = None,
 ) -> None:
-    """Print just the indicators, one per line, for piping."""
+    """Print just the indicators, one per line, for piping.
+
+    A secret is printed by its kind, fixed opening, length and digest, never
+    quoted, with --fanged as well: the run file holds the value.
+    """
     if min_confidence is not None and not 0 <= min_confidence <= 100:
         console.print(
             f"[bold]{min_confidence} is not a confidence.[/bold] Pass a number from 0 to 100."
         )
         raise typer.Exit(code=2)
     result, _ = _load(run)
+    mask = SecretMask(result.iocs)
     for ioc in result.iocs:
         if ioc_type and ioc.ioc_type != ioc_type:
             continue
         if min_confidence is not None and (ioc.confidence or 0) < min_confidence:
             continue
-        sys.stdout.write((ioc.value if fanged else ioc.defanged) + "\n")
+        shown = mask.text(ioc.value) if fanged else mask.indicator(ioc)
+        sys.stdout.write(shown + "\n")
 
 
 @app.command("pivots")
@@ -477,6 +625,177 @@ def stix_cmd(
     )
 
 
+@app.command("detections")
+def detections_cmd(
+    run: Annotated[Path, typer.Argument(help="A run saved with --json.")],
+    target: Annotated[
+        str | None,
+        typer.Option("--target", "-t", help="A target id, or all. See --list."),
+    ] = None,
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out",
+            "-o",
+            help="A folder (or a .zip with --target all). Required: the files carry live values.",
+        ),
+    ] = None,
+    show_list: Annotated[
+        bool, typer.Option("--list", help="List the targets and what each would carry.")
+    ] = False,
+    tlp: Annotated[str, typer.Option("--tlp", help="CLEAR, GREEN, AMBER or RED.")] = "AMBER",
+    types: Annotated[
+        list[str] | None,
+        typer.Option("--type", help="Only these indicator types. Repeat or use commas."),
+    ] = None,
+    source: Annotated[
+        str | None, typer.Option("--source", help="Only indicators from this file (name or path).")
+    ] = None,
+    include_private: Annotated[
+        bool,
+        typer.Option(
+            "--include-private",
+            help="Keep private, reserved, multicast and documentation addresses.",
+        ),
+    ] = False,
+    include_protocol: Annotated[
+        bool,
+        typer.Option("--include-protocol", help="Keep protocol strings (SSH algorithm names)."),
+    ] = False,
+    profile: Annotated[
+        str, typer.Option("--profile", help="Block list comments: generic, paloalto or bare.")
+    ] = "generic",
+    pick: Annotated[
+        list[str] | None,
+        typer.Option("--pick", help="Files for the YARA target, by name. Repeat for more."),
+    ] = None,
+) -> None:
+    """Write detection content from a saved run: Sigma, SPL, KQL, block lists, CSV, STIX, YARA.
+
+    Everything is a file. Nothing is sent to any product, and nothing live is
+    printed: the files carry live values, so they only go where -o points.
+    """
+    banner(f"detections | {run.name}")
+    result, candidates = _load(run)
+    try:
+        options = detections.Options(
+            tlp=detections.parse_tlp(tlp),
+            types=detections.parse_types(types, detections.SHAREABLE),
+            exclude_private=not include_private,
+            exclude_protocol=not include_protocol,
+            profile=detections.parse_profile(profile),
+        )
+    except detections.BadOption as exc:
+        console.print(f"[bold]{exc}.[/bold]")
+        raise typer.Exit(code=2) from None
+
+    if source:
+        wanted = source.strip("/")
+        match = next(
+            (
+                entry
+                for entry in result.files
+                if entry.name == source
+                or entry.url.removeprefix(result.root_url).strip("/") == wanted
+                or entry.url == source
+            ),
+            None,
+        )
+        if match is None:
+            console.print(f"[bold]No file {source} in this run.[/bold]")
+            raise typer.Exit(code=2)
+        options = replace(options, source=match.url)
+    if pick:
+        names = set(pick)
+        options = replace(
+            options, pick=tuple(e.url for e in result.files if e.name in names)
+        )
+
+    bundle_run = detections.Run(result=result, name=run.stem, candidates=tuple(candidates))
+    info = detections.summary(bundle_run, options)
+
+    if show_list:
+        table = Table(box=None, pad_edge=False)
+        table.add_column("target", style="cyan")
+        table.add_column("carries", justify="right")
+        table.add_column("file", style="dim")
+        for row in info["targets"]:
+            count = "pick files" if row["needs_pick"] and not options.pick else str(row["count"])
+            table.add_row(row["id"], count, row["filename"])
+        console.print(table)
+        _left_out_table(info["left_out"])
+        return
+
+    if target is None or out is None:
+        console.print("[bold]Pass --target and --out[/bold] (or --list to see the targets).")
+        console.print("[dim]The files carry live values, so they are never printed.[/dim]")
+        raise typer.Exit(code=2)
+
+    if target == "all":
+        chosen = list(detections.TARGETS.values())
+    elif target in detections.TARGETS:
+        chosen = [detections.TARGETS[target]]
+        if chosen[0].needs_pick and not options.pick:
+            options = replace(options, pick=tuple(e.url for e in result.files))
+    else:
+        console.print(f"[bold]No target {target}.[/bold] One of: all, " + ", ".join(
+            detections.TARGETS))
+        raise typer.Exit(code=2)
+
+    if target == "all" and out.suffix.lower() == ".zip":
+        data = detections.zip_bytes(bundle_run, options, chosen)
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(data)
+        except OSError as exc:
+            err.print(f"[red]could not write[/] {out}: {exc.strerror}")
+            raise typer.Exit(code=2) from None
+        console.print(f"[green]archive written[/] {out}")
+    else:
+        names = []
+        for item in chosen:
+            if item.needs_pick and not options.pick:
+                continue
+            name = detections.filename(bundle_run, item)
+            names.append(name)
+            _write(
+                out / name,
+                detections.render(item, bundle_run, options),
+                "written",
+                newline="\n",
+            )
+        if target == "all":
+            _write(
+                out / "MANIFEST.txt",
+                detections.manifest(bundle_run, options, names),
+                "written",
+                newline="\n",
+            )
+
+    table = Table(box=None, pad_edge=False, show_header=False)
+    table.add_column("what", style="cyan")
+    table.add_column("count", justify="right")
+    for kind, number in info["types"].items():
+        table.add_row(kind, str(number))
+    console.print(table)
+    _left_out_table(info["left_out"])
+    console.print(
+        f"[yellow]live indicators ({options.tlp_label}):[/] the files are not defanged. Import "
+        "them, but do not open them in a browser or paste them into a chat."
+    )
+
+
+def _left_out_table(counts: dict[str, int]) -> None:
+    table = Table(box=None, pad_edge=False, show_header=False, title="left out")
+    table.add_column("reason", style="dim")
+    table.add_column("count", justify="right", style="dim")
+    for reason, number in counts.items():
+        if number:
+            table.add_row(reason, str(number))
+    if table.row_count:
+        console.print(table)
+
+
 @app.command("check")
 def check_cmd(
     digest: Annotated[str, typer.Argument(help="An md5, sha1 or sha256.")],
@@ -573,7 +892,12 @@ def web_cmd(
     banner(f"web | http://{host}:{port}")
     from .web import create_app
 
-    uvicorn.run(create_app(runs_dir), host=host, port=port, log_level="warning")
+    uvicorn.run(
+        create_app(runs_dir, allowed_hosts=(host,)),
+        host=host,
+        port=port,
+        log_level="warning",
+    )
 
 
 def main() -> None:  # pragma: no cover

@@ -1,0 +1,8 @@
+# dirsift candidate block list, ipv4
+# dirsift run golden-run | author cyb3rp03t | TLP:AMBER
+# target hxxp://panel-gate[.]xyz/files/ | scan started 2026-10-01T09:00:00.000Z
+# Found in an open directory, not a verdict: hunt with it, decide yourself.
+# assumes an IP list (Palo Alto EDL IP, Fortinet IP feed, pfSense alias)
+# live values, not defanged: import it, do not open it in a browser or paste it in a chat.
+198.51.100.23
+203.0.113.9

@@ -108,7 +108,7 @@ def scan(root_url: str, options: ScanOptions | None = None) -> ScanResult:
         seen_files: set[str] = set()
         pending_peek: list[Entry] = []
 
-        # --- phase 1: walk the tree ---------------------------------------
+        # Phase 1: walk the tree
         while queue:
             if fetcher.requests_made >= options.max_requests:
                 result.errors.append(
@@ -189,7 +189,7 @@ def scan(root_url: str, options: ScanOptions | None = None) -> ScanResult:
                     if options.peek:
                         pending_peek.append(entry)
 
-        # --- phase 2: look at the files -----------------------------------
+        # Phase 2: look at the files
         for entry in pending_peek:
             if fetcher.requests_made >= options.max_requests:
                 result.errors.append(

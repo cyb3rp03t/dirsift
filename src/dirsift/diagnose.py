@@ -21,8 +21,8 @@ STATUS = re.compile(r"HTTP (\d{3})(?:\s+(.*))?$")
 
 #: What each status means here, written for the person reading the run.
 BY_STATUS = {
-    400: "The server rejected the request as malformed. Usually a URL with "
-    "characters the listing escaped one way and the server reads another.",
+    400: "The server rejected the request as malformed. One known cause is a URL "
+    "with characters the listing escaped one way and the server reads another.",
     401: "The server asked for credentials. DirSift carries none and never "
     "will, so this branch was dropped on purpose.",
     403: "Forbidden. The file is listed but the server will not serve it, "
@@ -38,15 +38,15 @@ BY_STATUS = {
     451: "Refused for legal reasons. Someone between you and the host is "
     "blocking it, or the host is complying with an order.",
     500: "The target broke while answering. That is the server's fault, not "
-    "the scan's, and it often means a script rather than a static index.",
+    "the scan's, and it can mean a script answers here rather than a static index.",
     502: "A gateway in front of the target got nothing usable from it. The "
     "thing that serves the files may be down while the front end is up.",
     503: "The service refused to serve. DirSift already waited and retried "
-    "twice. Common causes: the site is gone from the host, the index is only "
+    "twice. Known causes: the site is gone from the host, the index is only "
     "served under a hostname rather than the bare address, or the box is "
     "overloaded.",
-    504: "A gateway timed out waiting for the target. Slow or dying host; a "
-    "larger --timeout rarely helps when the front end has already given up.",
+    504: "A gateway timed out waiting for the target: a slow or dying host. "
+    "Once the front end has given up, a larger --timeout may not help.",
 }
 
 #: Codes that mean different things depending on who produced them.
@@ -103,7 +103,7 @@ BY_TRANSPORT = (
     ("WriteTimeout", "The request could not be sent inside --timeout."),
     ("PoolTimeout", "DirSift could not get a connection from its own pool in "
      "time. Retry the run."),
-    ("SSLError", "TLS failed. Open directories often run expired or "
+    ("SSLError", "TLS failed. Open directories can run expired or "
      "self signed certificates; --no-verify-tls is already the default, so "
      "this is something stranger."),
     ("ProxyError", "The proxy refused or failed. Check that it is running and "
@@ -111,7 +111,7 @@ BY_TRANSPORT = (
     ("redirect loop", "The server kept redirecting in a circle. Nothing to "
      "follow, so the walk stopped there."),
     ("too many redirects", "The chain of redirects was longer than DirSift "
-     "will follow, which usually means a redirect loop."),
+     "will follow, which can mean a redirect loop."),
     ("out of scope", "The link pointed outside the root you gave. DirSift "
      "stays under the root, so it was not followed."),
     ("unsupported scheme", "The link was not http or https."),

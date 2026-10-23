@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}DirSift{% endblock %}</title>
+<script>document.documentElement.classList.add("js");</script>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="stylesheet" href="/static/dirsift.css">
 <script src="/static/htmx.min.js" defer></script>
 <script src="/static/dirsift.js" defer></script>
@@ -11,21 +14,31 @@
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 
+{#- The header and the section menu are one sticky block, so the two never
+    stack over each other or over the page when it scrolls. -#}
+<div class="app-top">
 <header class="app-header">
-  <a class="brand" href="/">
-    <svg class="brand-mark" width="20" height="20" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-      <path d="M3 5h18"></path><path d="M6 12h12"></path><path d="M10 19h4"></path>
+  <a class="brand" href="/" aria-label="DirSift dashboard">
+    {#- The mark drawn for small sizes: square edges on the 16 grid, the D with
+        the sift band cut through it. Its colours come from the tokens. -#}
+    <svg class="brand-mark" width="24" height="24" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path class="brand-body" fill-rule="evenodd" d="M1 1h11l3 3v1h-2l-2-2H3v4h12v5l-3 3H1v-4h2v2h8l2-2V9H1z"></path>
+      <path class="brand-band" d="M3 7h10v2H3z"></path>
     </svg>
     DIRSIFT
   </a>
-  <span class="quiet">someone left the lights on</span>
-  <nav class="app-nav" aria-label="Main">
-    <a href="/"{% block nav_dashboard %}{% endblock %}>dashboard</a>
-  </nav>
+  <span class="quiet brand-tag">someone left the lights on</span>
+  <div class="header-end">
+    <nav class="app-nav" aria-label="Main">
+      <a href="/"{% block nav_dashboard %}{% endblock %}>dashboard</a>
+      {% block nav_extra %}{% endblock %}
+    </nav>
+  </div>
 </header>
+{% block subnav %}{% endblock %}
+</div>
 
-<main id="main">
+<main id="main" class="case">
 {% block backlink %}
 <a class="backlink" href="/">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -49,5 +62,7 @@
     contents are shown raw, because the contents are the evidence.
   </p>
 </footer>
+
+<div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
 </body>
 </html>

@@ -1,0 +1,6 @@
+# dirsift hashes of files read whole
+# dirsift run golden-run | author cyb3rp03t | TLP:AMBER
+# target hxxp://panel-gate[.]xyz/files/ | scan started 2026-10-01T09:00:00.000Z
+# Found in an open directory, not a verdict: hunt with it, decide yourself.
+9f2c1b7d3e4a5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8  0a1b2c3d4e5f60718293a4b5c6d7e8f9  loader.sh
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  d41d8cd98f00b204e9800998ecf8427e  empty.txt

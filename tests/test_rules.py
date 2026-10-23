@@ -18,7 +18,7 @@ import pytest
 from dirsift.fetcher import MIN_DELAY, PoliteFetcher, Scope, ScopeError, normalize_url
 from dirsift.walker import ScanOptions, scan
 
-# -- scope -----------------------------------------------------------------
+# Scope
 
 
 def test_scope_refuses_another_host():
@@ -61,7 +61,7 @@ def test_normalize_lowercases_host_and_drops_fragments():
     assert normalize_url("HTTP://A.TEST/Files/#frag") == "http://a.test/Files/"
 
 
-# -- the live rules --------------------------------------------------------
+# The live rules
 
 
 class _Handler(http.server.SimpleHTTPRequestHandler):

@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from urllib.parse import unquote, urlparse
 
 from .classify import mismatch
+from .extract import SecretPieces
 from .models import Entry, Ioc, Kind, ScanResult
 from .pivots import internal_address
 
@@ -96,7 +97,7 @@ def pattern_string(value: str) -> str:
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
-# -- the bundle --------------------------------------------------------------------
+# The bundle
 
 #: File kinds that make a directory a host for something that runs.
 RUNNABLE = {Kind.PE, Kind.ELF, Kind.MACHO, Kind.SCRIPT}
@@ -110,11 +111,24 @@ EXPORTED = {"ipv4": "ipv4-addr", "ipv6": "ipv6-addr", "domain": "domain-name", "
 class _Builder:
     """Collects objects by identifier, so the same thing is only written once."""
 
-    def __init__(self, result: ScanResult) -> None:
+    def __init__(self, result: ScanResult, only=None) -> None:
         self.result = result
         self.root = result.root_url
         self.when = timestamp(result.started_at)
         self.objects: dict[str, dict] = {}
+        # What the shared filter kept, as (kind, value, source paths), or None
+        # for the whole run.
+        self.only_items = (
+            None
+            if only is None
+            else [(item.kind, item.value, tuple(item.sources)) for item in only.indicators]
+        )
+        self.only = (
+            None if only is None else {(kind, value) for kind, value, _ in self.only_items}
+        )
+
+    def allowed(self, kind: str, value: str) -> bool:
+        return self.only is None or (kind, value) in self.only
 
     def keep(self, obj: dict) -> str:
         self.objects.setdefault(obj["id"], obj)
@@ -196,10 +210,18 @@ def _target(build: _Builder, infrastructure: str) -> str | None:
     """What the target is made of: its URL, its name, its address."""
     result = build.result
     host = urlparse(result.root_url).hostname or ""
-    parts = [build.observable("url", {"value": result.root_url})]
+    parts = []
+    if build.allowed("url", result.root_url):
+        parts.append(build.observable("url", {"value": result.root_url}))
     address = result.target_ip or host
-    target_address = build.address(address) if address else None
-    if host and _ip_version(host) is None:
+    version = _ip_version(address) if address else None
+    address_kind = "ipv4" if version == 4 else "ipv6"
+    target_address = (
+        build.address(address)
+        if address and version and build.allowed(address_kind, address.lower())
+        else None
+    )
+    if host and _ip_version(host) is None and build.allowed("domain", host.lower()):
         parts.append(build.observable("domain-name", {"value": host}))
     if target_address:
         parts.append(target_address)
@@ -247,8 +269,12 @@ def _files(build: _Builder, infrastructure: str) -> dict[str, str]:
     for entry in build.result.files:
         if not entry.sha256:
             continue
+        if build.only is not None and (
+            entry.truncated or not build.allowed("sha256", entry.sha256.lower())
+        ):
+            continue
         hashes = {"SHA-256": entry.sha256}
-        if entry.md5:
+        if entry.md5 and build.allowed("md5", entry.md5.lower()):
             hashes = {"MD5": entry.md5, **hashes}
         extra: dict[str, object] = {"hashes": hashes}
         if entry.size is not None:
@@ -271,7 +297,7 @@ def _files(build: _Builder, infrastructure: str) -> dict[str, str]:
     return by_url
 
 
-def _exportable(ioc: Ioc) -> tuple[str, str] | None:
+def _exportable(ioc: Ioc, secrets: SecretPieces | None = None) -> tuple[str, str] | None:
     """The observable type and live value for an indicator, or None to leave it out.
 
     An address with a port keeps only the address. An address nobody outside
@@ -282,6 +308,9 @@ def _exportable(ioc: Ioc) -> tuple[str, str] | None:
     if kind is None:
         return None
     value = ioc.value
+    if secrets is not None and secrets.carried_by(value):
+        # A webhook is a URL and a secret at once; the secret wins.
+        return None
     if ioc.ioc_type == "ipv4":
         value = value.split(":", 1)[0]
     host = urlparse(value).hostname if ioc.ioc_type == "url" else value
@@ -301,8 +330,12 @@ def _indicators(build: _Builder, infrastructure: str, files: dict[str, str]) -> 
     The description says which files it came from and nothing of the line it
     sat on: that line is the target's own text and can carry other live values.
     """
+    if build.only is not None:
+        _kept_indicators(build, infrastructure, files)
+        return
+    secrets = SecretPieces(build.result.iocs)
     for ioc in build.result.iocs:
-        exported = _exportable(ioc)
+        exported = _exportable(ioc, secrets)
         if exported is None:
             continue
         kind, value = exported
@@ -331,6 +364,49 @@ def _indicators(build: _Builder, infrastructure: str, files: dict[str, str]) -> 
                 build.relate("related-to", files[url], observed)
 
 
+#: The shared filter's names for the types that become observables here.
+FILTERED = {"ipv4": "ipv4-addr", "ipv6": "ipv6-addr", "domain": "domain-name", "url": "url"}
+
+
+def _kept_indicators(build: _Builder, infrastructure: str, files: dict[str, str]) -> None:
+    """One observable and one indicator for each value the shared filter kept.
+
+    The filter has already decided what may travel: private, documentation and
+    resolver addresses, shared hosts at host level and anything carrying a
+    secret are gone, and a URL's host is there in its own right.
+    """
+    result = build.result
+    by_path = {_relative(entry, build.root): entry.url for entry in result.files}
+    placed: dict[str, tuple[int | None, str | None]] = {}
+    for ioc in result.iocs:
+        if ioc.asn and ioc.ioc_type in ("ipv4", "ipv6"):
+            placed.setdefault(ioc.value.split(":", 1)[0], (ioc.asn, ioc.as_name))
+    if result.target_ip and result.target_asn:
+        placed.setdefault(result.target_ip, (result.target_asn, result.target_as_name))
+    for kind, value, paths in build.only_items or []:
+        sco = FILTERED.get(kind)
+        if sco is None:
+            continue
+        observed = build.observable(sco, {"value": value})
+        if sco in ("ipv4-addr", "ipv6-addr") and value in placed:
+            _network(build, observed, *placed[value])
+        where = ", ".join(paths) if paths else "the directory itself"
+        indicator = build.domain_object(
+            "indicator",
+            f"{sco}|{value}",
+            name=value,
+            description=f"Found in {where}; extracted from file contents by dirsift.",
+            pattern=f"[{sco}:value = {pattern_string(value)}]",
+            pattern_type="stix",
+            valid_from=build.when,
+        )
+        build.relate("indicates", indicator, infrastructure)
+        for path in paths:
+            url = by_path.get(path)
+            if url in files:
+                build.relate("related-to", files[url], observed)
+
+
 def _relative_url(url: str, root: str) -> str:
     return unquote(url.removeprefix(root)) or url
 
@@ -343,13 +419,86 @@ def left_out(result: ScanResult) -> dict[str, int]:
     }
 
 
-def build_bundle(result: ScanResult, candidates) -> dict:
-    """Every object this run supports, as one bundle. Reads the run, changes nothing."""
-    build = _Builder(result)
+# Marking and authorship
+
+#: The TLP marking definitions STIX 2.1 itself fixes (section 7.2.1.4). They are
+#: TLP 1.0, so TLP:CLEAR is written as its 1.0 name, WHITE: a platform knows
+#: these identifiers without being told.
+TLP_MARKINGS = {
+    "CLEAR": ("white", "marking-definition--613f2e26-407d-48c7-9eca-b8e91df99dc9"),
+    "GREEN": ("green", "marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"),
+    "AMBER": ("amber", "marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"),
+    "RED": ("red", "marking-definition--5e57c739-391a-4eb3-b6be-7d15ca92d5ed"),
+}
+
+#: Who wrote the bundle. Fixed, so every run names the same author object.
+AUTHOR_NAME = "cyb3rp03t"
+AUTHOR_CREATED = "2026-09-13T00:00:00.000Z"
+
+
+def tlp_marking(level: str) -> dict:
+    colour, identifier = TLP_MARKINGS[level]
+    return {
+        "type": "marking-definition",
+        "spec_version": "2.1",
+        "id": identifier,
+        "created": "2017-01-20T00:00:00.000Z",
+        "definition_type": "tlp",
+        "name": "TLP:" + colour.upper(),
+        "definition": {"tlp": colour},
+    }
+
+
+def author_identity() -> dict:
+    derived = uuid.uuid5(DIRSIFT_NAMESPACE, "identity|" + AUTHOR_NAME)
+    return {
+        "type": "identity",
+        "spec_version": "2.1",
+        "id": f"identity--{uuid.UUID(bytes=derived.bytes, version=4)}",
+        "created": AUTHOR_CREATED,
+        "modified": AUTHOR_CREATED,
+        "name": AUTHOR_NAME,
+        "identity_class": "individual",
+    }
+
+
+def _mark(objects: dict[str, dict], level: str) -> None:
+    """Label every object and name the author on every object that has one.
+
+    Observables carry markings but no author: STIX gives them no
+    ``created_by_ref``.
+    """
+    marking = tlp_marking(level)
+    author = author_identity()
+    for obj in objects.values():
+        obj["object_marking_refs"] = [marking["id"]]
+        if "created" in obj:
+            obj["created_by_ref"] = author["id"]
+    author["object_marking_refs"] = [marking["id"]]
+    objects[author["id"]] = author
+    objects[marking["id"]] = marking
+
+
+def build_bundle(
+    result: ScanResult, candidates, *, tlp: str | None = None, only=None
+) -> dict:
+    """Every object this run supports, as one bundle. Reads the run, changes nothing.
+
+    With ``tlp`` (CLEAR, GREEN, AMBER or RED) every object carries that marking
+    and every domain object and relationship names its author.
+
+    ``only`` is the shared filter's result (``detections.collect``): given, the
+    bundle carries exactly the values it kept and nothing else, so the rule
+    pack's count and its file agree. Without it, the bundle is the whole run,
+    as ``dirsift stix`` writes it.
+    """
+    build = _Builder(result, only)
     infrastructure = _infrastructure(build)
     _target(build, infrastructure)
     files = _files(build, infrastructure)
     _indicators(build, infrastructure, files)
+    if tlp is not None:
+        _mark(build.objects, tlp)
     return {
         "type": "bundle",
         "id": object_id("bundle", result.root_url, timestamp(result.started_at)),

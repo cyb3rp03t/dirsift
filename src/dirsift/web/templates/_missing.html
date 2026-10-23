@@ -1,0 +1,20 @@
+<div class="preview" data-preview-miss>
+  <div class="preview-head">
+    <p class="quiet">Preview</p>
+    <h2 class="preview-name" tabindex="-1">Not in this run</h2>
+  </div>
+
+  <div class="notice">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path>
+    </svg>
+    <p>
+      <span class="data">{{ url | defang }}</span> is not a file this run listed.
+      The link may come from another run, or the address was changed by hand.
+      Nothing was fetched to check: the run on disk is the only source.
+    </p>
+  </div>
+
+  <p><a href="/runs/{{ name }}">Back to the run</a></p>
+</div>

@@ -32,7 +32,7 @@ from dirsift.stix import (
 
 runner = CliRunner()
 
-# -- identifiers -----------------------------------------------------------------
+# Identifiers
 
 
 def test_observable_ids_match_the_reference_implementation():
@@ -85,7 +85,7 @@ def test_pattern_strings_escape_backslash_and_quote():
     assert pattern_string("\\'") == "'\\\\\\''"
 
 
-# -- runs ------------------------------------------------------------------------
+# Runs
 
 ROOT = "http://203.0.113.24:8080/files/"
 STARTED = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
@@ -154,7 +154,7 @@ def relations(loaded, kind: str) -> list[tuple[str, str]]:
     ]
 
 
-# -- the infrastructure ----------------------------------------------------------
+# The infrastructure
 
 
 def test_one_infrastructure_for_the_directory():
@@ -201,7 +201,7 @@ def test_a_named_target_brings_its_domain():
     assert (infra["id"], domain["id"]) in relations(loaded, "consists-of")
 
 
-# -- files -----------------------------------------------------------------------
+# Files
 
 
 def test_every_file_read_whole_is_a_file_with_both_hashes():
@@ -253,7 +253,7 @@ def test_non_ascii_names_reach_the_file_and_the_indicator_intact():
     assert name in bundle_json(build_bundle(*loaded))
 
 
-# -- indicators from the files ---------------------------------------------------
+# Indicators from the files
 
 
 def by_value(loaded, kind: str) -> dict[str, dict]:
@@ -314,7 +314,7 @@ def test_a_quote_and_a_backslash_in_a_url_are_escaped_and_accepted():
     stix2.parse(json.dumps(indicator), allow_custom=False)
 
 
-# -- networks --------------------------------------------------------------------
+# Networks
 
 
 def test_a_placed_target_belongs_to_its_autonomous_system():
@@ -343,7 +343,7 @@ def test_a_placed_indicator_address_belongs_to_its_system_too():
     assert (address["id"], system["id"]) in relations(loaded, "belongs-to")
 
 
-# -- the official validator and parser -------------------------------------------
+# The official validator and parser
 
 
 def full_run():
@@ -371,6 +371,25 @@ def test_the_bundle_passes_the_strict_validator():
     results = validate_string(text, ValidationOptions(version="2.1", strict=True))
     messages = [str(message) for message in (results.errors or []) + (results.warnings or [])]
     assert results.is_valid, "\n".join(messages)
+
+
+def test_a_marked_bundle_passes_the_strict_validator():
+    from stix2validator import ValidationOptions, validate_string
+
+    for level in ("CLEAR", "GREEN", "AMBER", "RED"):
+        text = bundle_json(build_bundle(*full_run(), tlp=level))
+        results = validate_string(text, ValidationOptions(version="2.1", strict=True))
+        messages = [str(m) for m in (results.errors or []) + (results.warnings or [])]
+        assert results.is_valid, level + ": " + "; ".join(messages)
+        parsed = stix2.parse(text, allow_custom=False)
+        marking = {"CLEAR": stix2.TLP_WHITE, "GREEN": stix2.TLP_GREEN,
+                   "AMBER": stix2.TLP_AMBER, "RED": stix2.TLP_RED}[level]
+        for obj in parsed.objects:
+            if obj.type == "marking-definition":
+                assert obj.id == marking.id
+                assert obj.definition.tlp == marking.definition.tlp
+            else:
+                assert obj.object_marking_refs == [marking.id]
 
 
 def test_the_bundle_parses_without_custom_content():
@@ -424,7 +443,7 @@ def test_a_name_based_uuid_left_at_version_5_would_fail_the_validator():
     assert not results.is_valid
 
 
-# -- the command -----------------------------------------------------------------
+# The command
 
 
 

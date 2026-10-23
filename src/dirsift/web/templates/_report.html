@@ -1,0 +1,85 @@
+{#- The report window. Without the script it is the last part of the run page,
+    reached by the Report link in the header, and its two download buttons are
+    plain GET submits. With the script it opens as a dialog over the page: one
+    Download button follows the Format choice, and Copy as text puts the
+    Markdown without the logo on the clipboard. -#}
+{% set r = report_ctx %}
+{% set saved_rank = (r.tlp_levels | selectattr("value", "equalto", r.saved_tlp) | map(attribute="rank") | first) if r.saved_tlp else none %}
+<section class="report-sheet" id="report" data-report
+         aria-labelledby="report-title"
+         data-md-url="{{ r.md_url }}" data-pdf-url="{{ r.pdf_url }}"
+         data-saved-tlp="{{ r.saved_tlp or '' }}"
+         data-saved-rank="{{ saved_rank if saved_rank is not none else '' }}"
+         data-warn-template="{{ r.downgrade_warning }}">
+  <div class="sheet-bar">
+    <h2 class="sheet-name" id="report-title" tabindex="-1">Report</h2>
+    <button type="button" class="copy sheet-close" data-report-close>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"></path><path d="M18 6 6 18"></path></svg>
+      <span class="visually-hidden">Close the report window</span>
+    </button>
+  </div>
+
+  <div class="report-body">
+    <form class="report-form" method="get" action="{{ r.pdf_url }}" data-report-form>
+      <fieldset class="js-only-block">
+        <legend>Format</legend>
+        <div class="choice-row">
+          <label class="choice"><input type="radio" name="format" value="pdf" checked data-report-format> PDF</label>
+          <label class="choice"><input type="radio" name="format" value="md" data-report-format> Markdown</label>
+        </div>
+      </fieldset>
+
+      <div class="tlp-pick">
+        <label class="label" for="report-tlp"><b>TLP</b> for this download</label>
+        <select id="report-tlp" name="tlp" data-report-tlp aria-describedby="report-tlp-def report-tlp-saved">
+          {% for level in r.tlp_levels %}
+          <option value="{{ level.value }}" data-rank="{{ level.rank }}"{% if level.value == r.selected_tlp %} selected{% endif %}>{{ level.label }}</option>
+          {% endfor %}
+        </select>
+        <div id="report-tlp-def">
+          {% for level in r.tlp_levels %}
+          <p class="tlp-def" data-tlp-def="{{ level.value }}">
+            <span class="tlp-label is-{{ level.value | lower | replace('+', '-') }}">{{ level.label }}</span>
+            <span>{{ level.definition }}</span>
+          </p>
+          {% endfor %}
+        </div>
+        <p class="report-note" id="report-tlp-saved">
+          {%- if r.saved_tlp -%}
+          Saved for this run: TLP:{{ r.saved_tlp }}. Change the saved label in the assessment below.
+          {%- else -%}
+          No TLP is saved for this run, so the report uses TLP:{{ r.default_tlp }}. Save one with the assessment below.
+          {%- endif -%}
+        </p>
+        <p class="notice is-warn report-warn" data-report-warn role="status" hidden></p>
+        {%- if r.saved_tlp %}
+        <p class="report-note no-js-only">A label looser than the saved TLP:{{ r.saved_tlp }} marks this one download lower; it does not change the label saved for the run.</p>
+        {%- endif %}
+      </div>
+
+      <div class="report-acts">
+        <button type="submit" class="button" formaction="{{ r.pdf_url }}" data-report-download>
+          <span>Download <span data-report-format-name>PDF</span></span>
+        </button>
+        <button type="submit" class="copy no-js-only" formaction="{{ r.md_url }}" name="download" value="1">Download Markdown</button>
+        <button type="submit" class="copy no-js-only" formaction="{{ r.md_url }}" name="logo" value="none">Open as text</button>
+        <button type="button" class="copy js-only" data-report-copy>Copy as text</button>
+      </div>
+      <p class="report-note">
+        The PDF saves as <span class="data">{{ r.pdf_filename }}</span>, the Markdown as
+        <span class="data">{{ r.md_filename }}</span>. The text version is the
+        Markdown without the logo image, for a ticket or a chat. Every value is defanged.
+      </p>
+    </form>
+
+    <details class="assess" id="assessment"{% if r.assessment.errors or r.assessment.conflict or r.assessment.sidecar_error %} open{% endif %}>
+      <summary>
+        Analyst assessment
+        <span class="assess-sub">Your judgement, kept apart from what DirSift observed. Until you fill it in, the report says Not assessed and lists these fields as open.</span>
+      </summary>
+      {% with form = r.assessment %}{% include "_assessment.html" %}{% endwith %}
+    </details>
+  </div>
+</section>
+<div class="sheet-scrim" data-report-scrim hidden></div>

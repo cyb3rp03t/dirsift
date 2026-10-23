@@ -18,6 +18,7 @@ from dirsift.confidence import band
 from dirsift.extract import dedupe_iocs, extract_iocs, is_comment
 from dirsift.models import Entry, ScanResult
 from dirsift.report import render_markdown
+from dirsift.report_model import build_report
 
 runner = CliRunner()
 
@@ -50,7 +51,7 @@ def ioc(result: ScanResult, value: str):
     return matches[0]
 
 
-# -- old runs ----------------------------------------------------------------------
+# Old runs
 
 
 def test_a_run_saved_before_the_new_fields_loads_and_is_scored(tmp_path: Path):
@@ -87,7 +88,7 @@ def test_a_run_saved_before_the_new_fields_loads_and_is_scored(tmp_path: Path):
     assert reply.stdout == "198[.]51[.]100[.]77\n"
 
 
-# -- how an indicator sat in the file ------------------------------------------------
+# How an indicator sat in the file
 
 
 def one(text: str, value: str, source: str = ROOT + "a.txt"):
@@ -164,7 +165,7 @@ def test_dedupe_keeps_a_comment_only_indicator_a_comment():
     assert merged.in_comment
 
 
-# -- the score ---------------------------------------------------------------------
+# The score
 
 
 def test_a_live_address_in_one_config_is_medium():
@@ -305,7 +306,7 @@ def test_non_ascii_comments_and_names_do_not_upset_the_score():
     assert ioc(result, "198.51.100.77").confidence == 60
 
 
-# -- the report and the pipe -------------------------------------------------------
+# The report and the pipe
 
 #: The fixture the pipe tests run on: a batch loader with Windows line endings
 #: and a config, with live, commented, defanged and resolver indicators.
@@ -381,6 +382,8 @@ def test_iocs_refuses_a_threshold_off_the_scale(tmp_path: Path):
 
 
 def test_the_report_shows_band_and_score_strongest_first():
+    """Appendix B lists every indicator with its band and score, highest first, and the
+    reasons beside the low ones; the most useful table carries the band and score."""
     result, candidates = analyze(
         ScanResult(
             root_url=ROOT,
@@ -388,15 +391,24 @@ def test_the_report_shows_band_and_score_strongest_first():
         ),
         asn_table=AsnTable(),
     )
-    markdown = render_markdown(result, candidates)
-    assert "not a judgement of whether anything is malicious" in markdown
-    block = markdown.split("**IPv4** (3)", 1)[1].split("```", 2)[1].strip().splitlines()
-    assert block[0] == "198[.]51[.]100[.]77:8443  medium 70"
-    assert block[1] == "203[.]0[.]113[.]50  low 45 (only in comments, sits in a config or script)"
-    assert block[2] == "8[.]8[.]8[.]8  low 30 (public resolver, sits in a config or script)"
+    markdown = render_markdown(build_report(result, candidates))
+    assert "it says nothing about intent" in markdown
+    appendix = markdown.split("## Appendix B. All indicators", 1)[1]
+    block = appendix.split("**IPv4 (3)**", 1)[1].split("```", 2)[1].strip().splitlines()
+    block = [" ".join(line.split()) for line in block[1:]]  # past the fence's language tag
+    assert block[0] == "198[.]51[.]100[.]77:8443 medium 70 install.bat, config.ini"
+    assert block[1] == (
+        "203[.]0[.]113[.]50 low 45 install.bat (only in comments, sits in a config or script)"
+    )
+    assert block[2] == (
+        "8[.]8[.]8[.]8 low 30 config.ini (public resolver, sits in a config or script)"
+    )
+    useful = markdown.split("### Most useful first", 1)[1].split("\n## ", 1)[0]
+    assert "| Confidence |" in useful
+    assert "| `cdn[.]panel-gate[.]xyz` | medium 60 |" in useful
 
 
-# -- the bundle and the pivots ---------------------------------------------------
+# The bundle and the pivots
 
 
 def both_runs():

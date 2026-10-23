@@ -17,6 +17,7 @@ from dirsift.analyze import analyze
 from dirsift.extract import extract_iocs
 from dirsift.models import Entry, ScanResult
 from dirsift.report import render_markdown
+from dirsift.report_model import build_report
 
 #: Names a real open directory has handed out: Cyrillic, Chinese, an RTL
 #: override used to disguise an extension, a combining accent, an emoji.
@@ -42,7 +43,7 @@ def _result_with(names: list[str]) -> ScanResult:
 
 def test_report_renders_hostile_filenames():
     result, candidates = analyze(_result_with(HOSTILE_NAMES))
-    markdown = render_markdown(result, candidates)
+    markdown = render_markdown(build_report(result, candidates))
     for name in HOSTILE_NAMES:
         assert name in markdown
 
@@ -50,7 +51,7 @@ def test_report_renders_hostile_filenames():
 def test_report_encodes_to_utf8_whatever_the_console_is():
     """The report must survive being written out on a non-UTF-8 code page."""
     result, candidates = analyze(_result_with(HOSTILE_NAMES))
-    markdown = render_markdown(result, candidates)
+    markdown = render_markdown(build_report(result, candidates))
     assert markdown.encode("utf-8").decode("utf-8") == markdown
 
 
@@ -89,7 +90,7 @@ def test_cli_prints_hostile_names_through_a_pipe(tmp_path):
     env.pop("PYTHONUTF8", None)
 
     completed = subprocess.run(
-        [sys.executable, "-m", "dirsift", "report", str(run), "--no-scaffold"],
+        [sys.executable, "-m", "dirsift", "report", str(run)],
         capture_output=True,
         env=env,
     )

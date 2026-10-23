@@ -26,6 +26,8 @@ dependencies = [
     "fastapi>=0.141,<0.142",
     "uvicorn[standard]>=0.53,<0.54",
     "python-multipart>=0.0.20,<0.1",
+    "reportlab>=5.1,<6",
+    "pillow>=12,<13",
 ]
 
 [project.urls]
@@ -37,8 +39,12 @@ dirsift = "dirsift.cli:app"
 
 [dependency-groups]
 dev = [
+    "pypdf>=6.2,<7",
+    "pypdfium2>=5,<6",
     "pytest>=9.1,<10",
     "pytest-asyncio>=1.4,<2",
+    # Parses the Sigma output in the tests. MIT; the tool itself writes YAML by hand.
+    "pyyaml>=6.0,<7",
     "ruff>=0.16,<0.17",
     "stix2>=3.0,<4",
     # 3.3.1 on PyPI ships without its JSON schemas, so it cannot validate anything.
@@ -64,3 +70,4 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = ["slow: builds the wheel, so it takes a few seconds"]
