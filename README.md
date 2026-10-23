@@ -1,7 +1,3 @@
-
-
-https://github.com/user-attachments/assets/0bec1394-7f9b-4e90-b660-cc4885a3493d
-
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/dirsift-lockup-dark.svg">
@@ -32,9 +28,9 @@ It does not decide anything for you. It collects.
                    by cyb3rp03t
 ```
 
-![A scan, the case file it produces, a file opened in the preview window, a rule pack, and the report window](docs/demo.gif)
+https://github.com/user-attachments/assets/0bec1394-7f9b-4e90-b660-cc4885a3493d
 
-**[Watch the full walkthrough](docs/demo.mp4)** (MP4). In order:
+The walkthrough, in order (also in the repository as [docs/demo.mp4](docs/demo.mp4)):
 
 1. A scan started from the terminal
 2. Progress while the walk runs
