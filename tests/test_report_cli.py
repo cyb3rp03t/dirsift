@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,8 @@ runner = CliRunner()
 def quiet(monkeypatch):
     monkeypatch.setenv("DIRSIFT_NO_BANNER", "1")
     monkeypatch.setenv("COLUMNS", "200")
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setenv("TERM", "dumb")
 
 
 def sidecar(run: Path, **fields) -> Path:
@@ -32,10 +35,13 @@ def sidecar(run: Path, **fields) -> Path:
 def test_help_shows_the_report_flags_and_hides_the_old_one():
     reply = runner.invoke(cli.app, ["report", "--help"])
     assert reply.exit_code == 0
+    # A CI runner can force colour on, and the escape codes split a flag's
+    # dashes from its name, so the check reads the help as plain text.
+    shown = re.sub(r"\x1b\[[0-9;]*m", "", reply.stdout)
     for flag in ("--out", "--tlp", "--author", "--assessment", "--logo"):
-        assert flag in reply.stdout
+        assert flag in shown
     for gone in ("--scaffold", "--format", "--theme", "--max-rows"):
-        assert gone not in reply.stdout
+        assert gone not in shown
 
 
 def test_without_out_the_markdown_goes_to_stdout(tmp_path: Path):

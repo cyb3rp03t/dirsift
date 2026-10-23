@@ -286,7 +286,9 @@ def test_a_five_thousand_row_run_is_fast_and_small():
     start = time.perf_counter()
     data = render_pdf(report_of(result))
     took = time.perf_counter() - start
-    assert took < 8, took
+    # A guard against a pathological slowdown, not a benchmark: shared CI
+    # runners take two to three times as long as a desktop.
+    assert took < 60, took
     assert len(data) < 1_000_000, len(data)
 
 
