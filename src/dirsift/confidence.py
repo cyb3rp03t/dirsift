@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import NamedTuple
 from urllib.parse import urlparse
 
+from .extract import host_of
 from .models import Entry, Ioc, Kind, ScanResult
 from .pivots import internal_address
 
@@ -99,7 +100,7 @@ def _address(ioc: Ioc) -> str:
     if ioc.ioc_type == "ipv6":
         return ioc.value.strip("[]")
     if ioc.ioc_type == "url":
-        host = urlparse(ioc.value).hostname or ""
+        host = host_of(ioc.value)
         return host if internal_address(host) is not None else ""
     return ""
 
@@ -111,7 +112,7 @@ def _host(ioc: Ioc) -> str:
     if ioc.ioc_type == "domain":
         return ioc.value.lower()
     if ioc.ioc_type == "url":
-        return (urlparse(ioc.value).hostname or "").lower()
+        return host_of(ioc.value).lower()
     return ""
 
 

@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from .asn import AsnTable, default_table
 from .cluster import apply_clusters, find_clusters
 from .confidence import score_iocs
-from .extract import dedupe_iocs, extract_iocs
+from .extract import dedupe_iocs, extract_iocs, host_of
 from .glue import GlueCandidate, apply_glue, score_glue
 from .models import ScanResult
 
@@ -38,7 +38,7 @@ def _placeable(ioc) -> str:
     if ioc.ioc_type in ("ipv4", "ipv6"):
         return _address_of(ioc.value)
     if ioc.ioc_type == "url":
-        return urlparse(ioc.value).hostname or ""
+        return host_of(ioc.value)
     return ""
 
 

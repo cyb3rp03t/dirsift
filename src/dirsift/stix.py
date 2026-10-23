@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 from urllib.parse import unquote, urlparse
 
 from .classify import mismatch
-from .extract import SecretPieces
+from .extract import SecretPieces, host_of
 from .models import Entry, Ioc, Kind, ScanResult
 from .pivots import internal_address
 
@@ -313,7 +313,7 @@ def _exportable(ioc: Ioc, secrets: SecretPieces | None = None) -> tuple[str, str
         return None
     if ioc.ioc_type == "ipv4":
         value = value.split(":", 1)[0]
-    host = urlparse(value).hostname if ioc.ioc_type == "url" else value
+    host = host_of(value) if ioc.ioc_type == "url" else value
     if host and internal_address(host):
         return None
     return kind, value

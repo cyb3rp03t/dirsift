@@ -142,9 +142,13 @@ def render(run: Run, options: Options) -> str:
                 *_list("cs-host|endswith", ["." + value for value in domains]),
             ]
         for number, item in enumerate(urls, start=1):
-            parts = urlsplit(item.value)
-            path = item.value[item.value.index(parts.netloc) + len(parts.netloc) :] or "/"
-            host = parts.hostname or ""
+            try:
+                parts = urlsplit(item.value)
+                path = item.value[item.value.index(parts.netloc) + len(parts.netloc) :] or "/"
+                host = parts.hostname or ""
+            except ValueError:
+                # A link whose host does not read gives no rule line.
+                continue
             detection += [f"    url_{number}:", *_list("cs-host", [options.show(host)])]
             if path not in ("", "/"):
                 detection += _list("c-uri|contains", [options.show(path)])
