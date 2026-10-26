@@ -629,9 +629,8 @@ the first commit.
 
 ## Thanks
 
-To [EyupErgin](https://github.com/EyupErgin) and emre5001, for the ideas
-and the honest feedback along the way. Small suggestions, and the tool is better
-for every one of them.
+Thanks to [EyupErgin](https://github.com/EyupErgin) and emre5001 for their ideas
+and honest feedback, which made DirSift better.
 
 ## About the author
 
