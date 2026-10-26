@@ -629,7 +629,7 @@ the first commit.
 
 ## Thanks
 
-To [Eyüp Şükrü Ergin](https://github.com/EyupErgin) and emre5001, for the ideas
+To [EyupErgin](https://github.com/EyupErgin) and emre5001, for the ideas
 and the honest feedback along the way. Small suggestions, and the tool is better
 for every one of them.
 
