@@ -627,6 +627,12 @@ whether you are allowed to look at something, you are not sure.
 Samples belong in a VM, never in a repository. `.gitignore` reflects that from
 the first commit.
 
+## Thanks
+
+To [EyupErgin](https://github.com/EyupErgin) and emre5001, for the ideas
+and the honest feedback along the way. Small suggestions, and the tool is better
+for every one of them.
+
 ## About the author
 
 **Alp Cihangir Aslan** (cyb3rp03t) is a Senior Threat Intelligence Analyst who
