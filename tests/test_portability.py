@@ -65,9 +65,9 @@ def test_run_json_round_trips_hostile_filenames(tmp_path):
 
 def test_indicators_survive_crlf_line_endings():
     """A file fetched from an IIS box arrives with CRLF; context must not keep it."""
-    text = 'c2 = "http://185.234.219.44:8081/g"\r\nmutex = "Global\\\\x"\r\n'
+    text = 'c2 = "http://1.2.3.44:8081/g"\r\nmutex = "Global\\\\x"\r\n'
     iocs = extract_iocs(text, "u")
-    assert any(i.value == "185.234.219.44:8081" for i in iocs)
+    assert any(i.value == "1.2.3.44:8081" for i in iocs)
     assert all("\r" not in (i.context or "") for i in iocs)
 
 

@@ -21,7 +21,8 @@ target, and any path where an indicator reaches output without being defanged.
 ## Scope of the tool
 
 DirSift reads directory indexes that a server publishes and the files they list.
-It sends only GET, holds no credentials, guesses no paths and writes nothing.
+It sends only GET and HEAD, holds no credentials, guesses no paths and writes
+nothing.
 Those limits are enforced in `src/dirsift/fetcher.py` and covered by
 `tests/test_rules.py`.
 

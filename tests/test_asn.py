@@ -201,8 +201,8 @@ def test_the_report_places_the_addresses_it_printed(tmp_path: Path):
         iocs=[
             Ioc(
                 ioc_type="ipv4",
-                value="185.234.219.44",
-                defanged="185[.]234[.]219[.]44",
+                value="1.2.3.44",
+                defanged="1[.]2[.]3[.]44",
                 source_url="http://203.0.113.24/files/config.json",
                 asn=64497,
                 as_name="TEST-NET-HOSTING",
