@@ -16,6 +16,24 @@ runs/
 captures/
 *.pcap
 
+# --- scan outputs the README examples write to the working folder ----------
+# They carry live addresses from a target, so they stay out of git and out
+# of a package built from a working copy.
+/run.json
+/run*.json
+/triage.md
+/report.pdf
+/report.md
+/changes.md
+/pivots.md
+/hunt.yar
+/rules/
+/hunts/
+/hunts.zip
+/lists/
+/out/
+/*.stix.json
+
 # --- secrets ---------------------------------------------------------------
 .env
 .env.*

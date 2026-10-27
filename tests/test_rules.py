@@ -102,7 +102,7 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
 def server(tmp_path: Path):
     (tmp_path / "sub").mkdir()
     (tmp_path / "private").mkdir()
-    (tmp_path / "sub" / "note.txt").write_text("c2 at 185.234.219.44:8081\n")
+    (tmp_path / "sub" / "note.txt").write_text("c2 at 1.2.3.44:8081\n")
     (tmp_path / "private" / "secret.txt").write_text("nope")
     (tmp_path / "run.bat").write_text('@echo off\nstart "" sub\\note.txt\n')
     (tmp_path / "loader.exe").write_bytes(b"MZ\x90\x00" + b"\x00" * 64)
@@ -183,4 +183,4 @@ def test_end_to_end_finds_the_driver_and_the_indicator(server):
     result = scan(server, ScanOptions(depth=2, delay=MIN_DELAY, allow_private=True))
     result, candidates = analyze(result)
     assert candidates[0].entry.name == "run.bat"
-    assert any(i.value == "185.234.219.44:8081" for i in result.iocs)
+    assert any(i.value == "1.2.3.44:8081" for i in result.iocs)

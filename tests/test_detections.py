@@ -238,8 +238,8 @@ def test_ipv6_documentation_and_multicast_are_left_out():
 
 
 def test_a_routable_address_is_kept_without_its_port():
-    result = single(ioc("ipv4", "45.155.205.233:8080"))
-    assert ("ipv4", "45.155.205.233") in kept(result)
+    result = single(ioc("ipv4", "1.2.3.233:8080"))
+    assert ("ipv4", "1.2.3.233") in kept(result)
 
 
 def test_the_private_filter_can_be_turned_off_but_resolvers_stay_out():
@@ -276,11 +276,11 @@ def test_shared_hosting_enters_as_a_url_only():
 
 
 def test_the_scanned_server_is_labelled_and_a_shared_one_is_not_a_host():
-    own = collect(single(root="http://files.evil-update.top/", target_ip="45.155.205.233"),
+    own = collect(single(root="http://files.evil-update.top/", target_ip="1.2.3.233"),
                   Options())
     labels = {(item.kind, item.value): item.label for item in own.indicators}
     assert labels[("domain", "files.evil-update.top")] == "target"
-    assert labels[("ipv4", "45.155.205.233")] == "target"
+    assert labels[("ipv4", "1.2.3.233")] == "target"
     assert labels[("url", "http://files.evil-update.top/")] == "target"
 
     shared = collect(

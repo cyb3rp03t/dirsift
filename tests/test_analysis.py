@@ -132,13 +132,13 @@ def test_refang_and_defang_round_trip():
 
 
 def test_loopback_and_unspecified_addresses_are_dropped():
-    found = {i.value for i in extract_iocs("127.0.0.1 0.0.0.0 185.234.219.44", "u")}
-    assert found == {"185.234.219.44"}
+    found = {i.value for i in extract_iocs("127.0.0.1 0.0.0.0 1.2.3.44", "u")}
+    assert found == {"1.2.3.44"}
 
 
 def test_port_is_kept_with_the_address():
-    values = {i.value for i in extract_iocs("beacon to 185.234.219.44:8081", "u")}
-    assert "185.234.219.44:8081" in values
+    values = {i.value for i in extract_iocs("beacon to 1.2.3.44:8081", "u")}
+    assert "1.2.3.44:8081" in values
 
 
 def test_named_secret_shapes():
@@ -167,9 +167,9 @@ def test_paths_are_not_defanged():
 
 
 def test_context_travels_defanged():
-    ioc = next(i for i in extract_iocs('"c2": "http://185.234.219.44/g"', "u"))
-    assert "http://185.234.219.44" not in ioc.context
-    assert "185[.]234[.]219[.]44" in ioc.context
+    ioc = next(i for i in extract_iocs('"c2": "http://1.2.3.44/g"', "u"))
+    assert "http://1.2.3.44" not in ioc.context
+    assert "1[.]2[.]3[.]44" in ioc.context
 
 
 def test_defang_text_leaves_prose_alone():
